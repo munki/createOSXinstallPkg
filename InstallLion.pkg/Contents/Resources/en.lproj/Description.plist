@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>IFPkgDescriptionDescription</key>
+	<string>Unattended custom install of Mac OS X Lion.</string>
+	<key>IFPkgDescriptionTitle</key>
+	<string>Mac OS X Lion</string>
+</dict>
+</plist>

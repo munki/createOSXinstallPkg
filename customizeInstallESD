@@ -1,0 +1,268 @@
+#!/usr/bin/python
+# encoding: utf-8
+#
+# Copyright 2011 Greg Neagle.
+#
+# Licensed under the Apache License, Version 2.0 (the 'License');
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an 'AS IS' BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+CustomizeInstallESD.py
+
+Created on 02 Sep 2011 by Greg Neagle
+
+This tool assists in creating a custom Lion InstallESD.dmg
+with additional packages that are installed after the OS is
+installed or upgraded.
+"""
+
+import optparse
+import os
+import plistlib
+import shutil
+import subprocess
+import sys
+import tempfile
+
+from xml.parsers.expat import ExpatError
+
+# dmg helpers
+def mountdmg(dmgpath, use_shadow=False):
+    """
+    Attempts to mount the dmg at dmgpath
+    and returns a list of mountpoints
+    If use_shadow is true, mount image with shadow file
+    """
+    mountpoints = []
+    dmgname = os.path.basename(dmgpath)
+    cmd = ['/usr/bin/hdiutil', 'attach', dmgpath,
+                '-mountRandom', '/tmp', '-nobrowse', '-plist',
+                '-owners', 'on']
+    if use_shadow:
+        shadowname = dmgname + '.shadow'
+        shadowpath = os.path.join(tmpdir, shadowname)
+        cmd.extend(['-shadow', shadowpath])
+    else:
+        shadowpath = None
+    proc = subprocess.Popen(cmd, bufsize=-1, 
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (pliststr, err) = proc.communicate()
+    if proc.returncode:
+        print >> sys.stderr, 'Error: "%s" while mounting %s.' % (err, dmgname)
+    if pliststr:
+        plist = plistlib.readPlistFromString(pliststr)
+        for entity in plist['system-entities']:
+            if 'mount-point' in entity:
+                mountpoints.append(entity['mount-point'])
+
+    return mountpoints, shadowpath
+
+
+def unmountdmg(mountpoint):
+    """
+    Unmounts the dmg at mountpoint
+    """
+    proc = subprocess.Popen(['/usr/bin/hdiutil', 'detach', mountpoint],
+                                bufsize=-1, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+    (unused_output, err) = proc.communicate()
+    if proc.returncode:
+        print >> sys.stderr, 'Polite unmount failed: %s' % err
+        print >> sys.stderr, 'Attempting to force unmount %s' % mountpoint
+        # try forcing the unmount
+        retcode = subprocess.call(['/usr/bin/hdiutil', 'detach', mountpoint,
+                                '-force'])
+        if retcode:
+            print >> sys.stderr, 'Failed to unmount %s' % mountpoint
+
+
+def cleanupFromFailAndExit(errmsg=''):
+    '''Print any error message to stderr,
+    clean up install data, and exit'''
+    if errmsg:
+        print >> sys.stderr, errmsg
+    # clean up
+    if tmpdir:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+    # exit
+    exit(1)
+
+
+tmpdir = None
+
+def main():
+    '''Builds a custom InstallESD.dmg image with additional packages
+    to install after the OS is installed'''
+    global tmpdir
+    
+    usage = ('Usage: %prog [--app /path/to/Install Mac OS X Lion.app |\n'
+        '                               --dmg /path/to/InstallESD.dmg]\n'
+        '                              [--output '
+        '/path/to/custom/InstallESD.dmg]\n'
+        '                              pkg_path [...]\n\n'
+        '    %prog creates a customized Lion installation disk image\n'
+        '    containing the contents of the original InstallESD.dmg plus the\n'
+        '    additional packages provided as arguments. Packages will be\n'
+        '    installed in the order you provide them at the command-line.')
+    p = optparse.OptionParser(usage=usage)
+    p.add_option('--app', '-a', 
+                 help='path to Install Mac OS X Lion.app.')
+    p.add_option('--dmg', '-d', help='path to (original) InstallESD.dmg. '
+        'Specify this option if you have a copy of the InstallESD.dmg file '
+        'but not a copy of "Install Mac OS X Lion.app".')
+    p.add_option('--output', '-o', help='Optional. Path for output DMG. '
+        'Defaults to "InstallESD.dmg" in the current working directory.')
+    options, arguments = p.parse_args()
+    
+    # check to see if we're root
+    # need to be root to copy things into the DMG with the right
+    # ownership and permissions
+    if os.geteuid() != 0:
+        print >> sys.stderr, 'You must run this as root, or via sudo!'
+        exit(-1)
+    
+    output_dmg_path = os.path.abspath('./InstallESD.dmg')
+    if options.output:
+        output_dmg_path = options.output
+        if os.path.isdir(output_dmg_path):
+            output_dmg_path = os.path.join(output_dmg_path, 'InstallESD.dmg')
+    if os.path.exists(output_dmg_path):
+        print >> sys.stderr, '%s already exists!' % output_dmg_path
+        exit(1)
+    
+    if len(arguments) < 1:
+        print >> sys.stderr, ('Must provide path to '
+            'at least one package to include in output dmg!')
+        exit(1)
+    
+    for pkg in arguments:
+        if not os.path.exists(pkg):
+            print >> sys.stderr, 'Can\'t find package %s' % pkg
+            exit(1)
+        if (not pkg.endswith('.pkg') and not pkg.endswith('.mpkg')):
+            print >> sys.stderr, '%s doesn\'t look like a package!' % pkg
+            exit(1)
+    
+    # find Install OS X Lion.app and/or InstallESD.dmg
+    search_locations = []
+    if options.app:
+        install_esd_dmg = os.path.join(
+            options.app, 'Contents/SharedSupport/InstallESD.dmg')
+        search_locations.append(install_esd_dmg)
+    elif options.dmg:
+        install_esd_dmg = options.dmg
+        search_locations.append(install_esd_dmg)
+    else:
+        # look for Install OS X Lion.app in /Applications
+        install_esd_dmg = os.path.join(
+            '/Applications/Install Mac OS X Lion.app',
+            'Contents/SharedSupport/InstallESD.dmg')
+        search_locations.append(install_esd_dmg)
+        if not os.path.exists(install_esd_dmg):
+            # look for Install OS X Lion.app in mounted volumes
+            for volume in os.listdir('/Volumes'):
+                install_esd_dmg = os.path.join(
+                    '/Volumes', volume,
+                    'Applications/Install Mac OS X Lion.app',
+                    'Contents/SharedSupport/InstallESD.dmg')
+                search_locations.append(install_esd_dmg)
+                if os.path.exists(install_esd_dmg):
+                    break
+    if not os.path.exists(install_esd_dmg):
+        print >> sys.stderr, ('InstallESD.dmg not found. Looked in %s' 
+                              % search_locations)
+        exit(1)
+        
+    if output_dmg_path == install_esd_dmg:
+        print >> sys.stderr, 'Input and output dmg paths are the same!'
+        exit(1)
+    
+    # generate OSInstall.collection pkg_array
+    # array needs OSInstall.mpkg twice at the beginning
+    # no idea why
+    pkg_array = ['/System/Installation/Packages/OSInstall.mpkg',
+                 '/System/Installation/Packages/OSInstall.mpkg']
+    for pkg in arguments:
+        pkgname = os.path.basename(pkg)
+        pkg_path = os.path.join('/System/Installation/Packages', pkgname)
+        pkg_array.append(pkg_path)
+        
+    print
+    print
+    print 'Input disk image: %s' % install_esd_dmg
+    print
+    print 'OSInstall.collection:'
+    print '    (It\'s normal for OSInstall.mpkg to be listed twice)'
+    print '------------------------------------------------------------------'
+    print plistlib.writePlistToString(pkg_array)
+    print '------------------------------------------------------------------'
+    print 'Output disk image: %s' % output_dmg_path
+    print
+    answer = raw_input('Build custom installation disk image? [y/n] ')
+    if not answer.lower().startswith('y'):
+        exit(0)
+    
+    tmpdir = tempfile.mkdtemp()
+    # mount InstallESD.dmg with shadow
+    print 'Mounting %s...' % install_esd_dmg
+    mountpoints, shadowpath = mountdmg(install_esd_dmg, use_shadow=True)
+    if not mountpoints:
+        cleanupFromFailAndExit('Nothing mounted from InstallESD.dmg')
+    
+    # copy additional packages to Packages directory
+    mountpoint = mountpoints[0]
+    packages_dir = os.path.join(mountpoint, 'Packages')
+    print 'Copying additional packages to %s' % packages_dir
+    try:
+        for pkg in arguments:
+            if os.path.isdir(pkg):
+                destination = os.path.join(packages_dir, os.path.basename(pkg))
+                print 'Copying bundle package %s' % pkg
+                shutil.copytree(pkg, destination)
+            else:
+                print 'Copying flat package %s' % pkg
+                shutil.copy(pkg, packages_dir)
+    except IOError, e:
+        unmountdmg(mountpoint)
+        cleanupFromFailAndExit('Error %s copying packages to diskimage' % e)
+    
+    # create OSInstall.collection in Packages directory
+    osinstall_collection_path = os.path.join(
+        packages_dir, 'OSInstall.collection')
+    print "Creating %s" % osinstall_collection_path
+    try:
+        plistlib.writePlist(pkg_array, osinstall_collection_path)
+    except ExpatError:
+        cleanupFromFailAndExit('Error %s creating OSInstall.collection' % e)
+        
+    # unmount InstallESD.dmg
+    print 'Unmounting %s...' % install_esd_dmg
+    unmountdmg(mountpoint)
+    
+    # convert InstallESD.dmg + shadow to UDZO image
+    print 'Creating disk image at %s...' % output_dmg_path
+    cmd = ['/usr/bin/hdiutil', 'convert', '-format', 'UDZO', 
+           '-o', output_dmg_path, install_esd_dmg, '-shadow', shadowpath]
+    try:
+        subprocess.check_call(cmd)
+    except subprocess.CalledProcessError, e:
+        cleanupFromFailAndExit(
+            'Failed to create %s at: %s' % (output_dmg_path, e))
+    
+    # clean up
+    shutil.rmtree(tmpdir, ignore_errors=True)
+    
+    print 'Done! Finished DMG is at %s' % output_dmg_path
+    exit(0)
+    
+if __name__ == '__main__':
+    main()

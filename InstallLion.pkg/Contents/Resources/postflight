@@ -1,0 +1,441 @@
+#!/usr/bin/python
+# encoding: utf-8
+#
+# Copyright 2011 Greg Neagle.
+#
+# Licensed under the Apache License, Version 2.0 (the 'License');
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an 'AS IS' BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+'''
+InstallLion.pkg postflight script
+
+Created 01 Sep 2011 by Greg Neagle
+
+Sets up a Lion install. 
+This is intended to be run as a package postflight script.'''
+
+import datetime
+import os
+import plistlib
+import shutil
+import subprocess
+import sys
+
+from xml.parsers.expat import ExpatError
+
+
+INSTALL_DATA_DIR_NAME = 'Mac OS X Install Data'
+
+
+def cleanupFromFailAndExit(errmsg=''):
+    '''Print any error message to stderr,
+    clean up install data, and exit'''
+    if errmsg:
+        print >> sys.stderr, errmsg
+    # clean up our install data if it exists
+    installvolumepath = sys.argv[3]
+    install_data_path = os.path.join(installvolumepath, INSTALL_DATA_DIR_NAME)
+    if os.path.exists(install_data_path):
+        shutil.rmtree(install_data_path, ignore_errors=True)
+    exit(1)
+
+
+# dmg helpers
+
+def mountdmg(dmgpath, use_shadow=False):
+    """
+    Attempts to mount the dmg at dmgpath
+    and returns a list of mountpoints
+    If use_shadow is true, mount image with shadow file
+    """
+    mountpoints = []
+    dmgname = os.path.basename(dmgpath)
+    cmd = ['/usr/bin/hdiutil', 'attach', dmgpath,
+                '-mountRandom', '/tmp', '-nobrowse', '-plist']
+    if use_shadow:
+        cmd.append('-shadow')
+    proc = subprocess.Popen(cmd,
+                            bufsize=-1, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
+    (pliststr, err) = proc.communicate()
+    if proc.returncode:
+        print >> sys.stderr, 'Error: "%s" while mounting %s.' % (err, dmgname)
+    if pliststr:
+        plist = plistlib.readPlistFromString(pliststr)
+        for entity in plist['system-entities']:
+            if 'mount-point' in entity:
+                mountpoints.append(entity['mount-point'])
+
+    return mountpoints
+
+
+def unmountdmg(mountpoint):
+    """
+    Unmounts the dmg at mountpoint
+    """
+    proc = subprocess.Popen(['/usr/bin/hdiutil', 'detach', mountpoint],
+                                bufsize=-1, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+    (unused_output, err) = proc.communicate()
+    if proc.returncode:
+        print >> sys.stderr, 'Polite unmount failed: %s' % err
+        print >> sys.stderr, 'Attempting to force unmount %s' % mountpoint
+        # try forcing the unmount
+        retcode = subprocess.call(['/usr/bin/hdiutil', 'detach', mountpoint,
+                                '-force'])
+        if retcode:
+            print >> sys.stderr, 'Failed to unmount %s' % mountpoint
+
+
+def getVolumeInfo(volumepath):
+    '''Gets info from diskutil about volumepath and returns a dict'''
+    proc = subprocess.Popen(
+        ['/usr/sbin/diskutil', 'info', '-plist', volumepath],
+        shell=False, stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, unused_error) = proc.communicate()
+    try:
+        info = plistlib.readPlistFromString(output)
+        return info
+    except ExpatError:
+        return None
+
+
+def createBootPlist(install_data_path):
+    '''Creates the com.apple.Boot.plist file'''
+    # Example com.apple.Boot.plist:
+    #
+    # <?xml version="1.0" encoding="UTF-8"?>
+    # <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" 
+    # "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    # <plist version="1.0">
+    # <dict>
+    #     <key>Kernel Cache</key>
+    #     <string>/Mac OS X Install Data/kernelcache</string>
+    #     <key>Kernel Flags</key>
+    #     <string>
+    #       container-dmg=file:///Mac%20OS%20X%20Install%20Data/InstallESD.dmg 
+    #       root-dmg=file:///BaseSystem.dmg</string>
+    # </dict>
+    # </plist>
+    
+    boot_pl = {}
+    boot_pl['Kernel Cache'] = '/Mac OS X Install Data/kernelcache'
+    boot_pl['Kernel Flags'] = (
+        'container-dmg=file:///Mac%20OS%20X%20Install%20Data/InstallESD.dmg '
+        'root-dmg=file:///BaseSystem.dmg')
+    try:
+        plistlib.writePlist(
+            boot_pl, os.path.join(install_data_path, 'com.apple.Boot.plist'))
+    except (IOError, ExpatError), e:
+        cleanupFromFailAndExit(
+            'Failed when creating com.apple.Boot.plist: %s' % e)
+
+
+def create_minstallconfig(resources_path, installvolumepath,
+    installvolinfo, language='en', custompackages=False):
+    '''Creates and writes our automated installation file'''
+    
+    # Example minstallconfig.xml:
+    #
+    # <?xml version="1.0" encoding="UTF-8"?>
+    # <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    #  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    # <plist version="1.0">
+    # <dict>
+    #    <key>ChoiceChanges</key>
+    #    <string>MacOSXInstaller.choiceChanges</string>
+    #    <key>InstallType</key>
+    #    <string>automated</string>
+    #    <key>Language</key>
+    #    <string>en</string>
+    #    <key>Package</key>
+    #    <string>/System/Installation/Packages/OSInstall.collection</string>
+    #    <key>Target</key>
+    #    <string>/Volumes/Image Volume</string>
+    #    <key>TargetName</key>
+    #    <string>Image Volume</string>
+    #    <key>TargetUUID</key>
+    #    <string>8217958C-4471-3E5F-B63D-2FFB04953F50</string>
+    # </dict>
+    # </plist>
+    
+    install_data_path = os.path.join(installvolumepath, INSTALL_DATA_DIR_NAME)
+    
+    config = {'InstallType': 'automated',
+              'Language':    language}
+    
+    # do we have a choiceChanges file?
+    choiceChangesFile = os.path.join(
+        resources_path, INSTALL_DATA_DIR_NAME, 
+        'MacOSXInstaller.choiceChanges')
+    if os.path.exists(choiceChangesFile):
+        shutil.copy(choiceChangesFile, install_data_path)
+        config['ChoiceChanges'] = 'MacOSXInstaller.choiceChanges'
+        
+    if custompackages:
+        pkgpath = '/System/Installation/Packages/OSInstall.collection'
+    else:
+        pkgpath = '/System/Installation/Packages/OSInstall.mpkg'
+    config['Package'] = pkgpath
+    
+    # add install volume info
+    config['Target'] = installvolumepath
+    config['TargetName'] = installvolinfo['VolumeName']
+    config['TargetUUID'] = installvolinfo['VolumeUUID']
+    
+    # now write it out
+    minstallconfig_path = os.path.join(install_data_path, 'minstallconfig.xml')
+    try:
+        plistlib.writePlist(config, minstallconfig_path)
+    except (IOError, ExpatError), e:
+        cleanupFromFailAndExit(
+            'Failed when creating minstallconfig.xml: %s' % e)
+
+
+def create_index_sproduct(resources_path, install_data_path):
+    '''Copies or creates index.sproduct file and any packages
+    it lists.'''
+    # index.sproduct contains a list of additional signed (and therefore _flat_)
+    # packages to install. Install Mac OS X Lion.app downloads these before
+    # setting up the Lion install. They do not seem to be vital to the install. 
+    # Example index.sproduct file:
+    #
+    # <?xml version="1.0" encoding="UTF-8"?>
+    # <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" 
+    #  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    # <plist version="1.0">
+    # <dict>
+    #    <key>Packages</key>
+    #    <array>
+    #        <dict>
+    #            <key>Identifier</key>
+    #            <string>com.apple.pkg.CompatibilityUpdate</string>
+    #            <key>Size</key>
+    #            <integer>10517</integer>
+    #            <key>URL</key>
+    #            <string>MacOS_10_7_IncompatibleAppList.pkg</string>
+    #            <key>Version</key>
+    #            <string>10.7</string>
+    #        </dict>
+    #    </array>
+    # </dict>
+    # </plist>
+    #
+    index_sproduct_file = os.path.join(
+        resources_path, INSTALL_DATA_DIR_NAME, 'index.sproduct')
+    if os.path.exists(index_sproduct_file):
+        # now copy all the packages it references
+        index_pl = plistlib.readPlist(index_sproduct_file)
+        for package in index_pl.get('Packages', []):
+            try:
+                pkgpath = os.path.join(
+                    resources_path, INSTALL_DATA_DIR_NAME, package['URL'])
+                shutil.copy(pkgpath, install_data_path)
+            except (KeyError, IOError), e:
+                cleanupFromFailAndExit(
+                    'Failed when copying signed packages: %s' % e)
+        try:
+            shutil.copy(index_sproduct_file, install_data_path)
+        except IOError, e:
+            cleanupFromFailAndExit('Failed when copying index.sproduct: %s' % e)
+    else:
+        # write an empty index.sproduct
+        index_pl = {}
+        index_pl['Packages'] = []
+        try:
+            index_sproduct_path = os.path.join(
+                install_data_path, 'index.sproduct')
+            plistlib.writePlist(index_pl, index_sproduct_path)
+        except (IOError, ExpatError), e:
+            cleanupFromFailAndExit(
+                'Failed when creating index.sproduct: %s' % e)
+
+
+def create_osinstallattr_plist(installvolinfo, install_data_path):
+    '''Creates the OSInstallAttr.plist file'''
+    # Lion installer consults OSInstallAttr.plist to make sure it hasn't been 
+    # too long since the Lion install environment was created; it skips the 
+    # automation file if it deems it "too old".
+    # This file also provides the path to the install automation file.
+    # Example OSInstallAttr.plist:
+    #
+    # <?xml version="1.0" encoding="UTF-8"?>
+    # <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" 
+    #  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    # <plist version="1.0">
+    # <dict>
+    #    <key>IAEndDate</key>
+    #    <date>2011-08-31T21:09:49Z</date>
+    #    <key>IALogFile</key>
+    #    <string>/Volumes/foo/Mac OS X Install Data/ia.log</string>
+    #    <key>OSIAutomationFile</key>
+    #    <string>/Volumes/foo/Mac OS X Install Data/minstallconfig.xml</string>
+    # </dict>
+    # </plist>
+    #
+    now = datetime.datetime.utcnow()
+    attr = {}
+    attr['IAEndDate'] = now
+    attr['IALogFile'] = ('/Volumes/%s/Mac OS X Install Data/ia.log' 
+                         % installvolinfo['VolumeName'])
+    attr['OSIAutomationFile'] = (
+        '/Volumes/%s/Mac OS X Install Data/minstallconfig.xml'
+        % installvolinfo['VolumeName'])
+    try:
+        attr_path = os.path.join(install_data_path, 'OSInstallAttr.plist')
+        plistlib.writePlist(attr, attr_path)
+    except (IOError, ExpatError), e:
+        cleanupFromFailAndExit(
+            'Failed when creating OSInstallAttr.plist: %s' % e)
+
+
+# main
+def main():
+    '''Our main routine'''
+    # get args passed to us from the Installer
+    try:
+        packagepath = sys.argv[1]
+        installvolumepath = sys.argv[3]
+    except IndexError:
+        cleanupFromFailAndExit('Missing runtime parameters from installer.')
+
+    # find our resources
+    resources_path = os.path.join(packagepath, "Contents", "Resources")
+    install_dmg = os.path.join(resources_path, 'InstallESD.dmg')
+    if not os.path.exists(install_dmg):
+        cleanupFromFailAndExit('Missing InstallESD.dmg in package resources.')
+
+    # prep volume for install. Create a directory for the install data on the 
+    # target volume.
+    install_data_path = os.path.join(installvolumepath, INSTALL_DATA_DIR_NAME)
+    print 'Creating %s...' % install_data_path
+    try:
+        os.mkdir(install_data_path)
+    except OSError, e:
+        msg = ('Could not create \'%s\' directory on %s:\n%s'
+               % (INSTALL_DATA_DIR_NAME, installvolumepath, e))
+        cleanupFromFailAndExit(msg)
+    
+    # mount the InstallESD.dmg
+    print 'Mounting %s...' % install_dmg
+    mountpoints = mountdmg(install_dmg)
+    if not mountpoints:
+        cleanupFromFailAndExit('Nothing mounted from InstallESD.dmg')
+    mountpoint = mountpoints[0]
+    
+    # copy kernelcache and boot.efi from root of dmg
+    # to install_data_path
+    kernelcache = os.path.join(mountpoint, 'kernelcache')
+    if not os.path.exists(kernelcache):
+        unmountdmg(mountpoint)
+        cleanupFromFailAndExit('kernelcache missing from InstallESD.dmg')
+    bootefi = os.path.join(mountpoint, 'boot.efi')
+    if not os.path.exists(kernelcache):
+        unmountdmg(mountpoint)
+        cleanupFromFailAndExit('boot.efi missing from InstallESD.dmg')
+    try:
+        print 'Copying kernelcache and boot.efi to %s...' % install_data_path
+        shutil.copy(kernelcache, install_data_path)
+        shutil.copy(bootefi, install_data_path)
+    except IOError, e:
+        unmountdmg(mountpoint)
+        cleanupFromFailAndExit('Could not copy needed resources: %s' % e)
+
+    # while we have the DMG mounted, let's check to see if the install has been
+    # customized with additional packages
+    osinstallcollection = os.path.join(mountpoint,
+        'Packages/OSInstall.collection')
+    # are we installing additional packages after the OS install?
+    custompackages_state = os.path.exists(osinstallcollection)
+    print 'Customized OS install found: %s' % custompackages_state
+
+    # unmount the InstallESD.dmg
+    print 'Unmounting %s...' % install_dmg
+    unmountdmg(mountpoint)
+
+    # either copy or link the dmg into place in install_data_path
+    dest_path = os.path.join(install_data_path, 'InstallESD.dmg')
+    try:
+        print 'Attempting to link %s to %s...' % (install_dmg, dest_path)
+        os.link(install_dmg, dest_path)
+    except OSError:
+        # couldn't link, so try to copy
+        try:
+            print ('Link not possible. Copying %s to %s...' 
+                    % (install_dmg, dest_path))
+            shutil.copy(install_dmg, dest_path)
+        except OSError, e:
+            cleanupFromFailAndExit(
+                'Could not copy InstallESD.dmg to %s' % install_data_path)
+        
+    # create and write com.apple.Boot.plist file in install_data_path
+    print 'Creating com.apple.Boot.plist at %s...' % install_data_path
+    createBootPlist(install_data_path)
+
+    # We have everything in place now to boot from the dmg.
+    # Next we need to set up items so the install kicks off automatically
+
+    # need this info a few places, so get it now
+    installvolinfo = getVolumeInfo(installvolumepath)
+
+    # minstallconfig.xml
+    # this is info used by the Installer for an automated install
+    print 'Creating minstallconfig.xml at %s...' % install_data_path
+    create_minstallconfig(resources_path, installvolumepath,
+        installvolinfo, language='en', custompackages=custompackages_state)
+
+    # index.sproduct
+    # this contains a list of additional signed (and therefore _flat_) 
+    # packages to install.
+    print 'Creating index.sproduct at %s...' % install_data_path
+    create_index_sproduct(resources_path, install_data_path)
+        
+    # OSInstallAttr.plist
+    # Lion installer consults this to make sure it hasn't been too long since
+    # the Lion install environment was created; it skips the automation file if
+    # it deems it "too old".
+    print 'Creating OSInstallAttr.plist at %s...' % install_data_path
+    create_osinstallattr_plist(installvolinfo, install_data_path)
+
+    # All files are in place. Before we reboot we must set an nvram variable and
+    # bless our Lion install OS files
+    # nvram
+    install_product_url = 'install-product-url=x-osproduct://'
+    install_product_url += installvolinfo['VolumeUUID']
+    install_product_url += '/Mac%2520OS%2520X%2520Install%2520Data'
+    print 'Setting OS X installer NVRAM install-product-url variable...'
+    try:
+        subprocess.check_call(['/usr/sbin/nvram', install_product_url])
+    except subprocess.CalledProcessError, e:
+        cleanupFromFailAndExit('Couldn\'t set nvram: %s' % e)
+    
+    # bless our Lion install boot environment
+    folder = install_data_path
+    bootefi = os.path.join(install_data_path, 'boot.efi')
+    options = 'config="\Mac OS X Install Data\com.apple.Boot"'
+    label = 'Mac OS X Installer'
+    cmd = ['/usr/sbin/bless', '--setBoot', '--folder', folder,
+           '--bootefi', bootefi, '--options', options, '--label', label]
+    print 'Blessing OS X installer boot environment in %s...' % folder
+    try:
+        subprocess.check_call(cmd)
+    except subprocess.CalledProcessError, e:
+        cleanupFromFailAndExit('Failed to bless Lion install startup: %s' % e)
+    
+    # all that's left now is to restart!
+    print 'Setup for Lion install is complete.'
+    print 'Please restart immediately to complete installation of OS X Lion.' 
+    exit(0)
+
+if __name__ == '__main__':
+    main()
