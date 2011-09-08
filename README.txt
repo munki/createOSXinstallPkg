@@ -70,6 +70,8 @@ and
 
 Updating this list of incompatible software does not seem to be vital to the installation of Lion. The index.sproduct file must exist, however, or the automated install is aborted. If you do not include the MacOS_10_7_IncompatibleAppList.pkg and index.sproduct files inside the InstallLion.pkg, the postflight script will create an "index.sproduct" file containing an empty "Packages" array.
 
+Still, it's probably a good thing to include the current version of the MacOS_10_7_IncompatibleAppList.pkg in your InstallLion.pkg.
+
 I've provided a tool to help you download the current version of the incompatible app list package. It's named "getIncompatibleAppListPkg". It will download the MacOS_10_7_IncompatibleAppList.pkg and create an index.sproduct file, saving both in the current directory. They must be copied to the InstallLion.pkg/Contents/Resources/Mac OS X Install Data/ directory.
 
 Here's a sample execution of the tool:
@@ -77,6 +79,8 @@ Here's a sample execution of the tool:
 Downloading http://swcdn.apple.com/content/downloads/02/12/041-1997/jPTmxRrfybSnP8NTRfwggvDn4F9byWBgvd/MacOS_10_7_IncompatibleAppList.pkg...
 Writing index.sproduct...
 Done.
+
+You'd find MacOS_10_7_IncompatibleAppList.pkg and index.sproduct in your current working directory; you would then copy them to InstallLion.pkg/Contents/Resources/Mac OS X Install Data/
 
 (Note: I found also that I could not add arbitrary packages to the Packages array of index.sproduct; the OS X Installer skipped any packages that were unsigned. Therefore this list is not easily used to install additional arbitrary packages. I was unwilling to go through the effort to convert my additional packages to "flat" packages and sign them to do further testing.) 
 
