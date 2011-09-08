@@ -58,10 +58,28 @@ The volume check script checks if Mac OS X is already installed on the target vo
 There are several things you can do to customize the install.
 
 *MacOSXInstaller.choiceChanges*
-If a ChoiceChanges XML file named "MacOSXInstaller.choiceChanges" is included in the package at InstallLion.pkg/Contents/Resources/Mac OS X Install Data/, it will be copied to the "Mac OS X Install Data" directory on the target volume and used during the install.
+If a ChoiceChanges XML file named "MacOSXInstaller.choiceChanges" is included in the package at InstallLion.pkg/Contents/Resources/Mac OS X Install Data/, it will be copied to the "Mac OS X Install Data" directory on the target volume and used during the install. InstallLion.pkg comes with a "null" (that is, one specifying no choice changes) MacOSXInstaller.choiceChanges file in that location.
 
-*index.sproduct and additional packages*
-When the "Install Mac OS X Lion" application runs, it queries Apple's Software Update Servers at http://swscan.apple.com/content/catalogs/others/index-lion-snowleopard-leopard.merged-1.sucatalog. In my testing, it then downloads a package named "MacOS_10_7_IncompatibleAppList.pkg" and copies it and an "index.sproduct" file that lists this package to the "Mac OS X Install Data" directory. This "MacOS_10_7_IncompatibleAppList.pkg" does not seem to be vital to the installation of Lion; in my testing, providing an "index.sproduct" file containing an empty "Packages" array was sufficient. The index.sproduct file must exist, however, or the automated install is aborted. I found also that I could not add arbitrary packages to the Packages array; the OS X Installer skipped any packages that were unsigned. If you find that you need one or more packages that are normally downloaded by the "Install Mac OS X Lion" application, you can include those packages together with a matching "index.sproduct" file in the InstallLion.pkg/Contents/Resources/Mac OS X Install Data/ directory, and the postflight script will copy them to the "Mac OS X Install Data" directory on the target volume where they will be used during the install.
+*index.sproduct and MacOS_10_7_IncompatibleAppList.pkg*
+When the "Install Mac OS X Lion" application runs, it queries Apple's Software Update Servers and downloads a package named "MacOS_10_7_IncompatibleAppList.pkg" and copies it and an "index.sproduct" file that lists this package to the "Mac OS X Install Data" directory. 
+
+This package updates a list of software that is incompatible with Lion by updating:
+/System/Library/PrivateFrameworks/SystemMigration.framework/Versions/A/Resources/English.lproj/IncompatibleApplicationsStrings.strings
+and
+/System/Library/PrivateFrameworks/SystemMigration.framework/Versions/A/Resources/MigrationIncompatibleApplicationsList.plist
+
+Updating this list of incompatible software does not seem to be vital to the installation of Lion. The index.sproduct file must exist, however, or the automated install is aborted. If you do not include the MacOS_10_7_IncompatibleAppList.pkg and index.sproduct files inside the InstallLion.pkg, the postflight script will create an "index.sproduct" file containing an empty "Packages" array.
+
+I've provided a tool to help you download the current version of the incompatible app list package. It's named "getIncompatibleAppListPkg". It will download the MacOS_10_7_IncompatibleAppList.pkg and create an index.sproduct file, saving both in the current directory. They must be copied to the InstallLion.pkg/Contents/Resources/Mac OS X Install Data/ directory.
+
+Here's a sample execution of the tool:
+% ./getIncompatibleAppListPkg 
+Downloading http://swcdn.apple.com/content/downloads/02/12/041-1997/jPTmxRrfybSnP8NTRfwggvDn4F9byWBgvd/MacOS_10_7_IncompatibleAppList.pkg...
+Writing index.sproduct...
+Done.
+
+(Note: I found also that I could not add arbitrary packages to the Packages array of index.sproduct; the OS X Installer skipped any packages that were unsigned. Therefore this list is not easily used to install additional arbitrary packages. I was unwilling to go through the effort to convert my additional packages to "flat" packages and sign them to do further testing.) 
+
 
 *Additional packages*
 The most likely customization you will want to do is to add additional packages to be installed after the OS install. Some examples might include a package that keeps the Setup Assistant from running when the machine first starts up under Lion, or a package that triggers your software installation management system to run, check for, and install any updates on the first boot after Lion is installed.

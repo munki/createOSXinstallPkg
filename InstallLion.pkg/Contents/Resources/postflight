@@ -313,7 +313,13 @@ def main():
     resources_path = os.path.join(packagepath, "Contents", "Resources")
     install_dmg = os.path.join(resources_path, 'InstallESD.dmg')
     if not os.path.exists(install_dmg):
-        cleanupFromFailAndExit('Missing InstallESD.dmg in package resources.')
+        # look in Resources/Mac OS X Install Data/ in case the
+        # admin put it there
+        install_dmg = os.path.join(
+            resources_path, INSTALL_DATA_DIR_NAME, 'InstallESD.dmg')
+        if not os.path.exists(install_dmg):
+            cleanupFromFailAndExit(
+                'Missing InstallESD.dmg in package resources.')
 
     # prep volume for install. Create a directory for the install data on the 
     # target volume.
