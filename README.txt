@@ -23,13 +23,13 @@ Those actions are:
   1) Create a "Mac OS X Install Data" directory at the root of the target volume.
   2) Mount the InstallESD.dmg disk image.
   3) Copy the kernelcache and boot.efi files from the disk image to the "Mac OS X Install Data" directory.
-  4) Unmounts (ejects) the InstallESD.dmg disk image.
+  4) Unmount (eject) the InstallESD.dmg disk image.
   5) If the InstallLion.pkg is on the same volume as the target volume, create a hard link to the InstallESD.dmg disk image in "Mac OS X Install Data", otherwise copy the InstallESD.dmg disk image to that directory.
   6) Create a com.apple.Boot.plist file in the "Mac OS X Install Data" directory which tells the kernel how to mount the disk image to use for booting.
-  7) Creates a minstallconfig.xml file, which tells the OS X Installer what to install and to which volume to install it. It also provides a path to a MacOSXInstaller.choiceChanges file if one has been included in the package.
-  8) Creates an index.sproduct file and an OSInstallAttr.plist in the "Mac OS X Install Data" directory. These are also used by the OS X Installer.
-  9) Sets a variable in nvram that the OS X Installer uses to find the product install info after reboot.
-  10) Uses the `bless` command to cause the Mac to boot from the kernel files copied to the "Mac OS X Install Data" directory.
+  7) Create a minstallconfig.xml file, which tells the OS X Installer what to install and to which volume to install it. It also provides a path to a MacOSXInstaller.choiceChanges file if one has been included in the package.
+  8) Create an index.sproduct file and an OSInstallAttr.plist in the "Mac OS X Install Data" directory. These are also used by the OS X Installer.
+  9) Set a variable in nvram that the OS X Installer uses to find the product install info after reboot.
+  10) Use the `bless` command to cause the Mac to boot from the kernel files copied to the "Mac OS X Install Data" directory.
 
 Since most of the work is done with a postflight script, and since that script may need to do a lengthy copy of almost 4GB of data (if the package is not on the target volume), you may see a long delay at the "Running package scripts" stage of installation. This is normal.
 
