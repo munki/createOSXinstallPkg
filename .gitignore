@@ -3,4 +3,5 @@
 # should not be added to Git repo
 InstallESD.dmg
 MacOS_10_7_IncompatibleAppList.pkg
+OSX_10_8_IncompatibleAppList.pkg
 index.sproduct

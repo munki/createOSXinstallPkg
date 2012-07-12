@@ -19,18 +19,25 @@
 getIncompatibleAppListPkg
 
 Created by Greg Neagle on 2011-09-07.
+Modified 2012-07-11: Add support for Mountain Lion
 """
 
 import subprocess
 import sys
 import os
+import optparse
 import plistlib
 
 from xml.parsers.expat import ExpatError
 
-PKGNAME = 'MacOS_10_7_IncompatibleAppList.pkg'
+LION_PKGNAME = 'MacOS_10_7_IncompatibleAppList.pkg'
 LION_CATALOG_URL = ('http://swscan.apple.com/content/catalogs/others/'
                     'index-lion-snowleopard-leopard.merged-1.sucatalog')
+
+MTN_LION_PKGNAME = 'OSX_10_8_IncompatibleAppList.pkg'
+MTN_LION_CATALOG_URL = ('https://swscan.apple.com/content/catalogs/others/'
+                        'index-mountainlion-lion-snowleopard-leopard.merged-1'
+                        '.sucatalog')
 
 
 def downloadURL(URL, to_file=None):
@@ -49,15 +56,16 @@ def downloadURL(URL, to_file=None):
         return output
 
 
-def findIncompatibleAppListPkgURL():
-    '''Searches Lion SU catalog to find a download URL for 
-    MacOS_10_7_IncompatibleAppList.pkg. If there's more than one, returns the 
+def findIncompatibleAppListPkgURL(catalog_url, package_name):
+    '''Searches SU catalog to find a download URL for 
+    package_name. If there's more than one, returns the 
     one with the most recent PostDate.'''
     
     def sort_by_PostDate(a, b):
         """Internal comparison function for use with sorting"""
         return cmp(b['PostDate'], a['PostDate'])
-    catalog_str = downloadURL(LION_CATALOG_URL)
+                
+    catalog_str = downloadURL(catalog_url)
     try:
         catalog = plistlib.readPlistFromString(catalog_str)
     except ExpatError:
@@ -69,7 +77,7 @@ def findIncompatibleAppListPkgURL():
             product = catalog['Products'][product_key]
             for package in product.get('Packages', []):
                 url = package.get('URL','')
-                if url.endswith(PKGNAME):
+                if url.endswith(package_name):
                     product_list.append({'PostDate': product['PostDate'],
                                          'URL': url})
         if product_list:
@@ -79,24 +87,56 @@ def findIncompatibleAppListPkgURL():
 
 
 def main():
-    '''Retrieves Lion SU catalog, looks for download URL for 
-    MacOS_10_7_IncompatibleAppList.pkg, downloads that and makes an
+    '''Retrieves Software Update catalog, looks for download URL for 
+    *_IncompatibleAppList.pkg, downloads that and makes an
     index.sproduct file in the current directory.'''
-    url = findIncompatibleAppListPkgURL()
+    p = optparse.OptionParser()
+    p.add_option('--os', default='10.7',
+        help=('Version of OS for which to get the IncompatibleAppList.pkg. '
+              'Currently supported versions are "10.7" and "10.8"'))
+    p.add_option('--output', default='.',
+        help=('Output path for the plist and package. Must be an existing '
+              'directory. Defaults to the current directory.'))
+    
+    options, arguments = p.parse_args()
+    
+    os_vers = options.os
+    if os_vers.startswith('10.7'):
+        catalog_url = LION_CATALOG_URL
+        package_name = LION_PKGNAME
+        os_vers = '10.7'
+    elif os_vers.startswith('10.8'):
+        catalog_url = MTN_LION_CATALOG_URL
+        package_name = MTN_LION_PKGNAME
+        os_vers = '10.8'
+    else:
+        print >> sys.stderr, 'Unsupported OS version!'
+        exit(1)
+        
+    destpath = os.path.abspath(options.output)
+    if not os.path.isdir(destpath):
+        print >> sys.stderr, 'Directory %s doesn\'t exist!' % destpath
+        exit(1)
+    
+    url = findIncompatibleAppListPkgURL(catalog_url, package_name)
     if url:
-        print 'Downloading %s...' % url
-        downloadURL(url, to_file=PKGNAME)
-        if os.path.exists(PKGNAME):
+        package_path = os.path.join(destpath, package_name)
+        print 'Downloading %s to %s...' % (url, package_path)
+        downloadURL(url, to_file=package_path)
+        if os.path.exists(package_name):
             # make index.sproduct
             pkg_info = {}
             pkg_info['Identifier'] = 'com.apple.pkg.CompatibilityUpdate'
-            pkg_info['Size'] = int(os.path.getsize(PKGNAME))
-            pkg_info['URL'] = PKGNAME
+            pkg_info['Size'] = int(os.path.getsize(package_name))
+            pkg_info['URL'] = package_name
+            #pkg_info['Version'] = os_vers
+            # nope. Version is 10.7 even for ML
             pkg_info['Version'] = '10.7'
             index_dict = {}
             index_dict['Packages'] = [pkg_info]
-            print "Writing index.sproduct..."
-            plistlib.writePlist(index_dict, 'index.sproduct')
+            plist_path = os.path.join(destpath, 'index.sproduct')
+            print "Writing index.sproduct to %s..." % plist_path
+            plistlib.writePlist(index_dict, plist_path)
             print "Done."
 
 
