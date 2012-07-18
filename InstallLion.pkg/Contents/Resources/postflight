@@ -19,8 +19,9 @@
 InstallLion.pkg postflight script
 
 Created 01 Sep 2011 by Greg Neagle
+Updated July 2012 for Mountain Lion and FileVault-protected volumes
 
-Sets up a Lion install. 
+Sets up a Lion/Mountain Lion install. 
 This is intended to be run as a package postflight script.'''
 
 import datetime
@@ -29,11 +30,14 @@ import plistlib
 import shutil
 import subprocess
 import sys
+import tempfile
+import urllib2
 
 from xml.parsers.expat import ExpatError
 
 
 INSTALL_DATA_DIR_NAME = 'Mac OS X Install Data'
+ENCODED_INSTALL_DATA_DIR_NAME = urllib2.quote(INSTALL_DATA_DIR_NAME)
 
 
 def cleanupFromFailAndExit(errmsg=''):
@@ -68,12 +72,18 @@ def mountdmg(dmgpath, use_shadow=False):
                             stderr=subprocess.PIPE)
     (pliststr, err) = proc.communicate()
     if proc.returncode:
-        print >> sys.stderr, 'Error: "%s" while mounting %s.' % (err, dmgname)
+        print >> sys.stderr, (
+            'Error: "%s" while mounting %s.' % (err.rstrip(), dmgname))
     if pliststr:
-        plist = plistlib.readPlistFromString(pliststr)
-        for entity in plist['system-entities']:
-            if 'mount-point' in entity:
-                mountpoints.append(entity['mount-point'])
+        try:
+            plist = plistlib.readPlistFromString(pliststr)
+            for entity in plist.get('system-entities', []):
+                if 'mount-point' in entity:
+                    mountpoints.append(entity['mount-point'])
+        except ExpatError:
+            print >> sys.stderr, (
+                'Bad plist string returned when mounting diskimage %s:\n%s'
+                % (dmgname, pliststr))
 
     return mountpoints
 
@@ -96,18 +106,225 @@ def unmountdmg(mountpoint):
             print >> sys.stderr, 'Failed to unmount %s' % mountpoint
 
 
-def getVolumeInfo(volumepath):
-    '''Gets info from diskutil about volumepath and returns a dict'''
+class Error(Exception):
+    '''Exceptions specific to this script'''
+    pass
+
+class CmdError(Error):
+    '''Error code returned from command'''
+    pass
+
+class PlistParseError(Error):
+    '''Plist parsing error'''
+    pass
+
+
+def getPlistFromCmd(cmd):
+    '''Executes cmd, returns a plist from the output'''
     proc = subprocess.Popen(
-        ['/usr/sbin/diskutil', 'info', '-plist', volumepath],
-        shell=False, stdin=subprocess.PIPE,
+        cmd, shell=False, stdin=subprocess.PIPE,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    (output, unused_error) = proc.communicate()
+    (output, error) = proc.communicate()
+    if proc.returncode:
+        raise CmdError((proc.returncode, error))
     try:
-        info = plistlib.readPlistFromString(output)
-        return info
+        return plistlib.readPlistFromString(output)
     except ExpatError:
+        raise PlistParseError(output)
+
+
+def getVolumeInfo(disk_id):
+    '''Gets info from diskutil about disk_id and returns a dict
+    disk_id can be MountPoint, DiskIdentifier, DeviceNode, UUID'''
+    try:
+        return getPlistFromCmd(
+            ['/usr/sbin/diskutil', 'info', '-plist', disk_id])
+    except Error:
         return None
+
+
+def getFileVaultStatus(volumepath):
+    '''Returns one of: 'Unknown', 'Not encrypted', 'Encryption pending',
+        'Encrypting', 'Encrypted', 'Decrypting', 'Decrypted' '''
+    try:
+        csinfo_plist = getPlistFromCmd(
+            ['/usr/sbin/diskutil', 'cs', 'info', '-plist', volumepath])
+    except CmdError:
+        # diskutil cs info returns error if volume is not CoreStorage
+        return 'Not encrypted'
+    except PlistParseError:
+        return 'Unknown'
+    conversion_state = csinfo_plist.get(
+                              'CoreStorageLogicalVolumeConversionState')
+    encryption_state = 'Unknown'
+    lvfUUID = csinfo_plist.get('MemberOfCoreStorageLogicalVolumeFamily')
+    if lvfUUID:
+        try:
+            lvf_info_plist = getPlistFromCmd(
+                ['/usr/sbin/diskutil', 'cs', 'info', '-plist', lvfUUID])
+        except Error:
+            lvf_info_plist = {}
+        encryption_type = lvf_info_plist.get(
+            'CoreStorageLogicalVolumeFamilyEncryptionType')
+        if encryption_type == 'AES-XTS':
+            if conversion_state == 'Pending':
+                encryption_state = 'Encryption pending'
+            elif conversion_state == 'Converting':
+                encryption_state = 'Encrypting'
+            elif conversion_state == 'Complete':
+                encryption_state = 'Encrypted'
+        elif encryption_type == 'None':
+            if conversion_state == 'Converting':
+                encryption_state = 'Decrypting'
+            elif conversion_state == 'Complete':
+                encryption_state = 'Decrypted'
+            else:
+                encryption_state = 'Not encrypted'
+    return encryption_state
+
+
+def getAppleBootPartitions():
+    '''Returns a list of DeviceIdentifiers (diskXsY) of partitions
+    that are of type Apple_Boot'''
+    try:
+        all_disk_info = getPlistFromCmd(
+            ['/usr/sbin/diskutil', 'list', '-plist'])
+    except Error:
+        return []
+    apple_boot_identifiers = []
+    disk_partition_info = all_disk_info.get('AllDisksAndPartitions', [])
+    for disk in disk_partition_info:
+        for partition in disk.get('Partitions', []):
+            if partition.get('Content') == 'Apple_Boot':
+                if 'DeviceIdentifier' in partition:
+                    apple_boot_identifiers.append(partition['DeviceIdentifier'])
+    return apple_boot_identifiers
+
+
+def getRPSdir(mountpoint):
+    '''Returns the correct com.apple.Boot.X directory from the 
+    helper partition'''
+    #
+    # for boot != root, boot info is stored in the Apple_Boot partition
+    # in one of three directories:
+    # com.apple.boot.R, com.apple.boot.P, or com.apple.boot.S
+    # These are the "Rock, Paper, Scissors" directories
+    # See "FindRPSDir" in http://opensource.apple.com/source/
+    #                          kext_tools/kext_tools-117.4/update_boot.c
+    #                         
+    Rdir = os.path.join(mountpoint, 'com.apple.boot.R')
+    Pdir = os.path.join(mountpoint, 'com.apple.boot.P')
+    Sdir = os.path.join(mountpoint, 'com.apple.boot.S')
+    haveR = os.path.exists(Rdir)
+    haveP = os.path.exists(Pdir)
+    haveS = os.path.exists(Sdir)
+    RPSdir = None
+    # handle all permutations: 3 dirs, any 2 dirs, any 1 dir
+    if haveR and haveP and haveS:
+        # Apple code picks R
+        RPSdir = Rdir
+    elif haveR and haveP:
+        # P wins
+        RPSdir = Pdir
+    elif haveR and haveS:
+        # R wins
+        RPSdir = Rdir
+    elif haveP and haveS:
+        # S wins
+        RPSdir = Sdir
+    elif haveR:
+        RPSdir = Rdir
+    elif haveP:
+        RPSdir = Pdir
+    elif haveS:
+        RPSdir = Sdir
+    return RPSdir
+
+
+def mountRecoveryPartitionHidden(deviceIdentifier):
+    '''Mounts an Apple_Boot partition so that it does not
+    show up in the Finder. Returns the path to the mountpoint.'''
+    mountpoint = tempfile.mkdtemp(dir='/tmp')
+    device = os.path.join('/dev', deviceIdentifier)
+    try:
+        # we use mount instead of diskutil to mount the disk
+        # so we can hide it from any users
+        subprocess.check_call(
+            ['/sbin/mount', '-t', 'hfs', '-o', 'nobrowse', device, mountpoint])
+        return mountpoint
+    except subprocess.CalledProcessError, e:
+        # couldn't mount it
+        os.rmdir(mountpoint)
+        return None
+
+
+def unmountVolume(mountpoint):
+    '''Uses diskutil to unmount the volume at mountpoint
+    Returns True if successful, false otherwise'''
+    try:
+        subprocess.check_call(
+            ['/usr/sbin/diskutil', 'unmount', mountpoint],
+            stdout=subprocess.PIPE)
+        os.rmdir(mountpoint)
+        return True
+    except subprocess.CalledProcessError, e:
+        # could not unmount the disk
+        print >> sys.stderr, 'Could not unmount %s' % mountpoint
+        return False
+    except OSError, e:
+        # could not remove the mountpoint dir
+        print >> sys.stderr, 'Could not remove %s' % mountpoint
+        return False
+
+
+def getBootPlistRootUUID(deviceIdentifier):
+    '''Looks for a com.apple.Boot.plist file on an Apple_Boot
+    partition; returns its Root UUID'''
+    result = None
+    mountpoint = mountRecoveryPartitionHidden(deviceIdentifier)
+    if mountpoint:
+        # active com.apple.Boot.plist could be in one of three directories.
+        # find the right one.
+        RPSdir = getRPSdir(mountpoint)
+        if RPSdir:
+            boot_plist_file = os.path.join(
+                RPSdir, 
+                'Library/Preferences/SystemConfiguration/'
+                'com.apple.Boot.plist')
+            if os.path.exists(boot_plist_file):
+                try:
+                    boot_plist = plistlib.readPlist(boot_plist_file)
+                except ExpatError:
+                    print 'Bad plist at %s' % boot_plist_file
+                    boot_plist = {}
+                result = boot_plist.get('Root UUID')
+            else:
+                print 'No plist at %s' % boot_plist_file
+        else:
+            print 'Apple_Boot partition %s debug info: %s' % (deviceIdentifier, 
+                                                         os.listdir(mountpoint))
+        unused_result = unmountVolume(mountpoint)
+    return result
+
+
+def findFileVaultHelperPartition(target_volume_path):
+    '''Attempts to find the Recovery partition that acts as the helper 
+    partition for the target_volume_path'''
+    disk_info = getVolumeInfo(target_volume_path)
+    if not disk_info:
+        print >> sys.stderr, (
+            'Could not get disk info for %s' % target_volume_path)
+        return None
+    vol_UUID = disk_info.get('VolumeUUID')
+    if not vol_UUID:
+        print >> sys.stderr, (
+            'Could not get VolumeUUID for %s' % target_volume_path)
+        return None
+    for device_id in getAppleBootPartitions():
+        if getBootPlistRootUUID(device_id) == vol_UUID:
+            return device_id
+    print >> sys.stderr, 'Did not find a FileVault helper partition!'
+    return None
 
 
 def createBootPlist(install_data_path):
@@ -129,10 +346,11 @@ def createBootPlist(install_data_path):
     # </plist>
     
     boot_pl = {}
-    boot_pl['Kernel Cache'] = '/Mac OS X Install Data/kernelcache'
+    boot_pl['Kernel Cache'] = '/%s/kernelcache' % INSTALL_DATA_DIR_NAME
     boot_pl['Kernel Flags'] = (
-        'container-dmg=file:///Mac%20OS%20X%20Install%20Data/InstallESD.dmg '
-        'root-dmg=file:///BaseSystem.dmg')
+        'container-dmg=file://localhost/%s/InstallESD.dmg '
+        'root-dmg=file://localhost/BaseSystem.dmg'
+        % ENCODED_INSTALL_DATA_DIR_NAME)
     try:
         plistlib.writePlist(
             boot_pl, os.path.join(install_data_path, 'com.apple.Boot.plist'))
@@ -286,17 +504,59 @@ def create_osinstallattr_plist(installvolinfo, install_data_path):
     now = datetime.datetime.utcnow()
     attr = {}
     attr['IAEndDate'] = now
-    attr['IALogFile'] = ('/Volumes/%s/Mac OS X Install Data/ia.log' 
-                         % installvolinfo['VolumeName'])
+    attr['IALogFile'] = ('/Volumes/%s/%s/ia.log' 
+                        % (installvolinfo['VolumeName'], INSTALL_DATA_DIR_NAME))
     attr['OSIAutomationFile'] = (
-        '/Volumes/%s/Mac OS X Install Data/minstallconfig.xml'
-        % installvolinfo['VolumeName'])
+        '/Volumes/%s/%s/minstallconfig.xml'
+        % (installvolinfo['VolumeName'], INSTALL_DATA_DIR_NAME))
     try:
         attr_path = os.path.join(install_data_path, 'OSInstallAttr.plist')
         plistlib.writePlist(attr, attr_path)
     except (IOError, ExpatError), e:
         cleanupFromFailAndExit(
             'Failed when creating OSInstallAttr.plist: %s' % e)
+
+
+def updateHelperPartition(helper_partition, install_data_path):
+    '''Used with a FileVault-encrypted boot disk -- updates the Apple_Boot
+    helper partition to use the OS X Installer files'''
+    mountpoint = mountRecoveryPartitionHidden(helper_partition)
+    # update com.apple.Boot.plist
+    RPSdir = getRPSdir(mountpoint)
+    boot_plist_file = os.path.join(
+        RPSdir, 
+        'Library/Preferences/SystemConfiguration/'
+        'com.apple.Boot.plist')
+    if os.path.exists(boot_plist_file):
+        try:
+            boot_plist = plistlib.readPlist(boot_plist_file)
+        except ExpatError:
+            unused_result = unmountVolume(mountpoint)
+            cleanupFromFailAndExit(
+                'Bad com.apple.Bootplist at %s' % boot_plist_file)
+        boot_plist['Kernel Flags'] = (
+            'container-dmg=file://localhost/%s/InstallESD.dmg '
+            'root-dmg=file://localhost/BaseSystem.dmg'
+            % ENCODED_INSTALL_DATA_DIR_NAME)
+        try:
+            plistlib.writePlist(boot_plist, boot_plist_file)
+        except (IOError, ExpatError), e:
+            unused_result = unmountVolume(mountpoint)
+            cleanupFromFailAndExit(
+                'Failed when updating com.apple.Boot.plist: %s' % e)
+    # copy kernelcache to Recovery partition
+    kernelcache = os.path.join(install_data_path, 'kernelcache')
+    dest_path = os.path.join(RPSdir,
+        'System/Library/Caches/com.apple.kext.caches/Startup')
+    try:
+        print "Copying kernelcache to helper partition"
+        shutil.copy(kernelcache, dest_path)
+    except IOError, e:
+        unused_result = unmountVolume(mountpoint)
+        cleanupFromFailAndExit('Failed when copying kernelcache: %s' % e)
+    # we could remove it from the target volume now, but we won't bother
+    # unmount the Recovery partition
+    unused_result = unmountVolume(mountpoint)
 
 
 # main
@@ -308,7 +568,33 @@ def main():
         installvolumepath = sys.argv[3]
     except IndexError:
         cleanupFromFailAndExit('Missing runtime parameters from installer.')
-
+    
+    target_volume_is_encrypted = False
+    # check the install volume to see if it's encrypted
+    fv_state = getFileVaultStatus(installvolumepath)
+    if fv_state == 'Encrypted':
+        target_volume_is_encrypted = True
+    elif fv_state == 'Not encrypted':
+        target_volume_is_encrypted = False
+    else:
+        # volume is being converted to or from Core Storage
+        # we should not install now.
+        cleanupFromFailAndExit(
+            'Cannot install to CoreStorage volume %s in the middle of '
+            'conversion. Current state is: %s.\nPlease wait for conversion '
+            'to complete, restart, and try again.' 
+            % (installvolumepath, fv_state))
+            
+    helper_partition = None
+    if target_volume_is_encrypted:
+        # make sure we can find the Apple_Boot helper partition before
+        # we continue
+        helper_partition = findFileVaultHelperPartition(installvolumepath)
+        if not helper_partition:
+            cleanupFromFailAndExit(
+                'Cannot find a Recovery partition set as a boot helper for '
+                'encrypted volume %s. Cannot continue.' % installvolumepath)
+    
     # find our resources
     resources_path = os.path.join(packagepath, "Contents", "Resources")
     install_dmg = os.path.join(resources_path, 'InstallESD.dmg')
@@ -320,7 +606,7 @@ def main():
         if not os.path.exists(install_dmg):
             cleanupFromFailAndExit(
                 'Missing InstallESD.dmg in package resources.')
-
+                
     # prep volume for install. Create a directory for the install data on the 
     # target volume.
     install_data_path = os.path.join(installvolumepath, INSTALL_DATA_DIR_NAME)
@@ -383,10 +669,11 @@ def main():
         except OSError, e:
             cleanupFromFailAndExit(
                 'Could not copy InstallESD.dmg to %s' % install_data_path)
-        
-    # create and write com.apple.Boot.plist file in install_data_path
-    print 'Creating com.apple.Boot.plist at %s...' % install_data_path
-    createBootPlist(install_data_path)
+    
+    if not target_volume_is_encrypted:
+        # create and write com.apple.Boot.plist file in install_data_path
+        print 'Creating com.apple.Boot.plist at %s...' % install_data_path
+        createBootPlist(install_data_path)
 
     # We have everything in place now to boot from the dmg.
     # Next we need to set up items so the install kicks off automatically
@@ -414,33 +701,42 @@ def main():
     create_osinstallattr_plist(installvolinfo, install_data_path)
 
     # All files are in place. Before we reboot we must set an nvram variable and
-    # bless our Lion install OS files
+    # bless our OS X installer files
     # nvram
     install_product_url = 'install-product-url=x-osproduct://'
     install_product_url += installvolinfo['VolumeUUID']
-    install_product_url += '/Mac%2520OS%2520X%2520Install%2520Data'
+    install_product_url += urllib2.quote('/%s' % ENCODED_INSTALL_DATA_DIR_NAME)
     print 'Setting OS X installer NVRAM install-product-url variable...'
     try:
         subprocess.check_call(['/usr/sbin/nvram', install_product_url])
     except subprocess.CalledProcessError, e:
         cleanupFromFailAndExit('Couldn\'t set nvram: %s' % e)
     
-    # bless our Lion install boot environment
+    # bless our OS X install boot environment
     folder = install_data_path
     bootefi = os.path.join(install_data_path, 'boot.efi')
-    options = 'config="\Mac OS X Install Data\com.apple.Boot"'
     label = 'Mac OS X Installer'
     cmd = ['/usr/sbin/bless', '--setBoot', '--folder', folder,
-           '--bootefi', bootefi, '--options', options, '--label', label]
+           '--bootefi', bootefi, '--label', label]
+    if not target_volume_is_encrypted:
+        options = ['--options', 
+                   'config="\%s\com.apple.Boot"' % INSTALL_DATA_DIR_NAME]
+        cmd.extend(options)
     print 'Blessing OS X installer boot environment in %s...' % folder
     try:
         subprocess.check_call(cmd)
     except subprocess.CalledProcessError, e:
-        cleanupFromFailAndExit('Failed to bless Lion install startup: %s' % e)
+        cleanupFromFailAndExit(
+            'Failed to bless OS X installer for startup: %s' % e)
+    
+    if target_volume_is_encrypted:
+        # more work to do!
+        # we need to update the Recovery partition
+        updateHelperPartition(helper_partition, install_data_path)
     
     # all that's left now is to restart!
-    print 'Setup for Lion install is complete.'
-    print 'Please restart immediately to complete installation of OS X Lion.' 
+    print 'Setup for OS X install is complete.'
+    print 'Please restart immediately to complete installation of OS X.' 
     exit(0)
 
 if __name__ == '__main__':
