@@ -73,7 +73,7 @@ def mountdmg(dmgpath, use_shadow=False):
     (pliststr, err) = proc.communicate()
     if proc.returncode:
         print >> sys.stderr, (
-            'Error: "%s" while mounting %s.' % (err.rstrip(), dmgname))
+            'Error: "%s" while mounting %s.' % (str(err).rstrip(), dmgname))
     if pliststr:
         try:
             plist = plistlib.readPlistFromString(pliststr)
@@ -244,6 +244,11 @@ def getRPSdir(mountpoint):
 def mountRecoveryPartitionHidden(deviceIdentifier):
     '''Mounts an Apple_Boot partition so that it does not
     show up in the Finder. Returns the path to the mountpoint.'''
+    volumeinfo = getVolumeInfo(deviceIdentifier)
+    # is it already mounted?
+    if volumeinfo.get('MountPoint'):
+        return volumeinfo['MountPoint']
+    # not currently mounted; let's mount it hidden
     mountpoint = tempfile.mkdtemp(dir='/tmp')
     device = os.path.join('/dev', deviceIdentifier)
     try:
@@ -252,8 +257,9 @@ def mountRecoveryPartitionHidden(deviceIdentifier):
         subprocess.check_call(
             ['/sbin/mount', '-t', 'hfs', '-o', 'nobrowse', device, mountpoint])
         return mountpoint
-    except subprocess.CalledProcessError, e:
+    except subprocess.CalledProcessError, err:
         # couldn't mount it
+        print >> sys.stderr, 'Could not mount %s: %s' % (deviceIdentifier, err)
         os.rmdir(mountpoint)
         return None
 
@@ -265,15 +271,17 @@ def unmountVolume(mountpoint):
         subprocess.check_call(
             ['/usr/sbin/diskutil', 'unmount', mountpoint],
             stdout=subprocess.PIPE)
-        os.rmdir(mountpoint)
+        if os.path.isdir(mountpoint):
+            # remove the mountpoint dir if it still exists
+            os.rmdir(mountpoint)
         return True
-    except subprocess.CalledProcessError, e:
+    except subprocess.CalledProcessError, err:
         # could not unmount the disk
-        print >> sys.stderr, 'Could not unmount %s' % mountpoint
+        print >> sys.stderr, 'Could not unmount %s: %s' % (mountpoint, err)
         return False
-    except OSError, e:
+    except OSError, err:
         # could not remove the mountpoint dir
-        print >> sys.stderr, 'Could not remove %s' % mountpoint
+        print >> sys.stderr, 'Could not remove %s: %s' % (mountpoint, err)
         return False
 
 
@@ -354,9 +362,9 @@ def createBootPlist(install_data_path):
     try:
         plistlib.writePlist(
             boot_pl, os.path.join(install_data_path, 'com.apple.Boot.plist'))
-    except (IOError, ExpatError), e:
+    except (IOError, ExpatError), err:
         cleanupFromFailAndExit(
-            'Failed when creating com.apple.Boot.plist: %s' % e)
+            'Failed when creating com.apple.Boot.plist: %s' % err)
 
 
 def create_minstallconfig(resources_path, installvolumepath,
@@ -415,9 +423,9 @@ def create_minstallconfig(resources_path, installvolumepath,
     minstallconfig_path = os.path.join(install_data_path, 'minstallconfig.xml')
     try:
         plistlib.writePlist(config, minstallconfig_path)
-    except (IOError, ExpatError), e:
+    except (IOError, ExpatError), err:
         cleanupFromFailAndExit(
-            'Failed when creating minstallconfig.xml: %s' % e)
+            'Failed when creating minstallconfig.xml: %s' % err)
 
 
 def create_index_sproduct(resources_path, install_data_path):
@@ -459,13 +467,14 @@ def create_index_sproduct(resources_path, install_data_path):
                 pkgpath = os.path.join(
                     resources_path, INSTALL_DATA_DIR_NAME, package['URL'])
                 shutil.copy(pkgpath, install_data_path)
-            except (KeyError, IOError), e:
+            except (KeyError, IOError), err:
                 cleanupFromFailAndExit(
-                    'Failed when copying signed packages: %s' % e)
+                    'Failed when copying signed packages: %s' % err)
         try:
             shutil.copy(index_sproduct_file, install_data_path)
-        except IOError, e:
-            cleanupFromFailAndExit('Failed when copying index.sproduct: %s' % e)
+        except IOError, err:
+            cleanupFromFailAndExit(
+                'Failed when copying index.sproduct: %s' % err)
     else:
         # write an empty index.sproduct
         index_pl = {}
@@ -474,9 +483,9 @@ def create_index_sproduct(resources_path, install_data_path):
             index_sproduct_path = os.path.join(
                 install_data_path, 'index.sproduct')
             plistlib.writePlist(index_pl, index_sproduct_path)
-        except (IOError, ExpatError), e:
+        except (IOError, ExpatError), err:
             cleanupFromFailAndExit(
-                'Failed when creating index.sproduct: %s' % e)
+                'Failed when creating index.sproduct: %s' % err)
 
 
 def create_osinstallattr_plist(installvolinfo, install_data_path):
@@ -512,9 +521,9 @@ def create_osinstallattr_plist(installvolinfo, install_data_path):
     try:
         attr_path = os.path.join(install_data_path, 'OSInstallAttr.plist')
         plistlib.writePlist(attr, attr_path)
-    except (IOError, ExpatError), e:
+    except (IOError, ExpatError), err:
         cleanupFromFailAndExit(
-            'Failed when creating OSInstallAttr.plist: %s' % e)
+            'Failed when creating OSInstallAttr.plist: %s' % err)
 
 
 def updateHelperPartition(helper_partition, install_data_path):
@@ -540,10 +549,10 @@ def updateHelperPartition(helper_partition, install_data_path):
             % ENCODED_INSTALL_DATA_DIR_NAME)
         try:
             plistlib.writePlist(boot_plist, boot_plist_file)
-        except (IOError, ExpatError), e:
+        except (IOError, ExpatError), err:
             unused_result = unmountVolume(mountpoint)
             cleanupFromFailAndExit(
-                'Failed when updating com.apple.Boot.plist: %s' % e)
+                'Failed when updating com.apple.Boot.plist: %s' % err)
     # copy kernelcache to Recovery partition
     kernelcache = os.path.join(install_data_path, 'kernelcache')
     dest_path = os.path.join(RPSdir,
@@ -551,9 +560,9 @@ def updateHelperPartition(helper_partition, install_data_path):
     try:
         print "Copying kernelcache to helper partition"
         shutil.copy(kernelcache, dest_path)
-    except IOError, e:
+    except IOError, err:
         unused_result = unmountVolume(mountpoint)
-        cleanupFromFailAndExit('Failed when copying kernelcache: %s' % e)
+        cleanupFromFailAndExit('Failed when copying kernelcache: %s' % err)
     # we could remove it from the target volume now, but we won't bother
     # unmount the Recovery partition
     unused_result = unmountVolume(mountpoint)
@@ -613,9 +622,9 @@ def main():
     print 'Creating %s...' % install_data_path
     try:
         os.mkdir(install_data_path)
-    except OSError, e:
+    except OSError, err:
         msg = ('Could not create \'%s\' directory on %s:\n%s'
-               % (INSTALL_DATA_DIR_NAME, installvolumepath, e))
+               % (INSTALL_DATA_DIR_NAME, installvolumepath, err))
         cleanupFromFailAndExit(msg)
     
     # mount the InstallESD.dmg
@@ -639,9 +648,9 @@ def main():
         print 'Copying kernelcache and boot.efi to %s...' % install_data_path
         shutil.copy(kernelcache, install_data_path)
         shutil.copy(bootefi, install_data_path)
-    except IOError, e:
+    except IOError, err:
         unmountdmg(mountpoint)
-        cleanupFromFailAndExit('Could not copy needed resources: %s' % e)
+        cleanupFromFailAndExit('Could not copy needed resources: %s' % err)
 
     # while we have the DMG mounted, let's check to see if the install has been
     # customized with additional packages
@@ -666,9 +675,10 @@ def main():
             print ('Link not possible. Copying %s to %s...' 
                     % (install_dmg, dest_path))
             shutil.copy(install_dmg, dest_path)
-        except OSError, e:
+        except OSError, err:
             cleanupFromFailAndExit(
-                'Could not copy InstallESD.dmg to %s' % install_data_path)
+                'Could not copy InstallESD.dmg to %s: %s' % 
+                (install_data_path, err))
     
     if not target_volume_is_encrypted:
         # create and write com.apple.Boot.plist file in install_data_path
@@ -709,8 +719,8 @@ def main():
     print 'Setting OS X installer NVRAM install-product-url variable...'
     try:
         subprocess.check_call(['/usr/sbin/nvram', install_product_url])
-    except subprocess.CalledProcessError, e:
-        cleanupFromFailAndExit('Couldn\'t set nvram: %s' % e)
+    except subprocess.CalledProcessError, err:
+        cleanupFromFailAndExit('Couldn\'t set nvram: %s' % err)
     
     # bless our OS X install boot environment
     folder = install_data_path
@@ -725,9 +735,9 @@ def main():
     print 'Blessing OS X installer boot environment in %s...' % folder
     try:
         subprocess.check_call(cmd)
-    except subprocess.CalledProcessError, e:
+    except subprocess.CalledProcessError, err:
         cleanupFromFailAndExit(
-            'Failed to bless OS X installer for startup: %s' % e)
+            'Failed to bless OS X installer for startup: %s' % err)
     
     if target_volume_is_encrypted:
         # more work to do!
@@ -741,3 +751,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+

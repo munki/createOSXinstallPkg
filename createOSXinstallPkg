@@ -1,0 +1,877 @@
+#!/usr/bin/env python
+# encoding: utf-8
+#
+# Copyright 2012 Greg Neagle.
+#
+# Licensed under the Apache License, Version 2.0 (the 'License');
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an 'AS IS' BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+createOSXinstallPkg
+
+Created by Greg Neagle on 2012-07-16.
+"""
+
+import sys
+import os
+
+import optparse
+import plistlib
+import shutil
+import subprocess
+import tempfile
+
+from xml.dom import minidom
+from xml.parsers.expat import ExpatError
+
+DEBUG = False
+DEFAULT_INSTALLKBYTES = 8 * 1024 * 1024
+
+def cleanUp():
+    '''Cleanup our TMPDIR'''
+    if TMPDIR:
+        shutil.rmtree(TMPDIR, ignore_errors=True)
+
+
+def fail(errmsg=''):
+    '''Print any error message to stderr,
+    clean up install data, and exit'''
+    if errmsg:
+        print >> sys.stderr, errmsg
+    cleanUp()
+    # exit
+    exit(1)
+
+
+def cleanupPackage(output_pkg_path):
+    '''Attempt to clean up our output package
+    if we fail during creation'''
+    if not DEBUG:
+        try:
+            shutil.rmtree(output_pkg_path)
+        except EnvironmentError:
+            pass
+
+
+# dmg helpers
+def mountdmg(dmgpath, use_shadow=False):
+    """
+    Attempts to mount the dmg at dmgpath
+    and returns a list of mountpoints
+    If use_shadow is true, mount image with shadow file
+    """
+    mountpoints = []
+    dmgname = os.path.basename(dmgpath)
+    cmd = ['/usr/bin/hdiutil', 'attach', dmgpath,
+                '-mountRandom', TMPDIR, '-nobrowse', '-plist',
+                '-owners', 'on']
+    if use_shadow:
+        shadowname = dmgname + '.shadow'
+        shadowpath = os.path.join(TMPDIR, shadowname)
+        cmd.extend(['-shadow', shadowpath])
+    else:
+        shadowpath = None
+    proc = subprocess.Popen(cmd, bufsize=-1, 
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (pliststr, err) = proc.communicate()
+    if proc.returncode:
+        print >> sys.stderr, 'Error: "%s" while mounting %s.' % (err, dmgname)
+    if pliststr:
+        plist = plistlib.readPlistFromString(pliststr)
+        for entity in plist['system-entities']:
+            if 'mount-point' in entity:
+                mountpoints.append(entity['mount-point'])
+
+    return mountpoints, shadowpath
+
+
+def unmountdmg(mountpoint):
+    """
+    Unmounts the dmg at mountpoint
+    """
+    proc = subprocess.Popen(['/usr/bin/hdiutil', 'detach', mountpoint],
+                                bufsize=-1, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+    (unused_output, err) = proc.communicate()
+    if proc.returncode:
+        print >> sys.stderr, 'Polite unmount failed: %s' % err
+        print >> sys.stderr, 'Attempting to force unmount %s' % mountpoint
+        # try forcing the unmount
+        retcode = subprocess.call(['/usr/bin/hdiutil', 'detach', mountpoint,
+                                '-force'])
+        if retcode:
+            print >> sys.stderr, 'Failed to unmount %s' % mountpoint
+
+
+def makePkgDirs(pkgpath):
+    '''Makes the package directories for a package with
+    full pathname "pkgpath"'''
+    if os.path.exists(pkgpath):
+        fail('Package exists at %s' % pkgpath)
+    try:
+        os.makedirs(os.path.join(pkgpath, 'Contents/Resources/en.lproj'))
+        os.makedirs(os.path.join(pkgpath, 
+                                 'Contents/Resources/Mac OS X Install Data'))
+    except OSError, err:
+        fail('Error creating package directories at %s: %s' 
+                              % (pkgpath, err))
+
+
+def makeDescriptionPlist(output_pkg_path, os_version='10.7', build_number=None):
+    '''Writes a Resources/en.lproj/Description.plist 
+    for the OS to be installed'''
+    pkg_description = {}
+    title = 'Mac OS X'
+    description = 'Unattended custom install of Mac OS X'
+    if os_version.startswith('10.7'):
+        title = 'Mac OS X Lion'
+        description = 'Unattended custom install of Mac OS X Lion'
+    elif os_version.startswith('10.8'):
+        title = 'OS X Mountain Lion'
+        description = 'Unattended custom install of OS X Mountain Lion.'
+    
+    description += ' version %s' % os_version
+    if build_number:
+        description += ' build %s' % build_number
+    pkg_description['IFPkgDescriptionDescription'] = description
+    pkg_description['IFPkgDescriptionTitle'] = title
+    output_file = os.path.join(output_pkg_path,
+        'Contents/Resources/en.lproj/Description.plist')
+    try:
+        plistlib.writePlist(pkg_description, output_file)
+    except (OSError, ExpatError), err:
+        cleanupPackage(output_pkg_path)
+        fail('Error creating file at %s: %s' 
+                              % (output_file, err))
+
+
+def makeInfoPlist(output_pkg_path, os_version='10.7', build_number=None,
+                  pkg_id=None, installKBytes=DEFAULT_INSTALLKBYTES):
+    '''Creates Contents/Info.plist for package'''
+    if not pkg_id:
+        if os_version.startswith('10.7'):
+            pkg_id = 'com.googlecode.munki.installlion.pkg'
+        if os_version.startswith('10.8'):
+            pkg_id = 'com.googlecode.munki.installmountainlion.pkg'
+        else:
+            pkg_id = 'com.googlecode.munki.installosx.pkg'
+    info = {
+        'CFBundleIdentifier': pkg_id,
+        'CFBundleShortVersionString': str(os_version),
+        'IFMajorVersion': 1,
+        'IFMinorVersion': 0,
+        'IFPkgFlagDefaultLocation': '/tmp',
+        'IFPkgFlagFollowLinks': True,
+        'IFPkgFlagAuthorizationAction': 'RootAuthorization',
+        'IFPkgFlagInstallFat': False,
+        'IFPkgFlagInstalledSize': int(installKBytes),
+        'IFPkgFlagIsRequired': False,
+        'IFPkgFlagRestartAction': 'RequiredRestart',
+        'IFPkgFlagRootVolumeOnly': False,
+        'IFPkgFormatVersion': 0.10000000149011612
+    }
+    if build_number:
+        info['CFBundleGetInfoString'] = (
+            '%s Build %s' % (os_version, build_number))
+    output_file = os.path.join(output_pkg_path, 'Contents/Info.plist')
+    try:
+        plistlib.writePlist(info, output_file)
+    except (OSError, ExpatError), err:
+        cleanupPackage(output_pkg_path)
+        fail('Error creating file at %s: %s' 
+                              % (output_file, err))
+
+
+def writefile(stringdata, path):
+    '''Writes string data to path.'''
+    fileobject = open(path, mode='w', buffering=1)
+    print >> fileobject, stringdata
+    fileobject.close()
+
+
+def writePkgInfo(output_pkg_path):
+    '''Creates Contents/PkgInfo file'''
+    output_file = os.path.join(output_pkg_path, 'Contents/PkgInfo')
+    try:
+        writefile('pkmkrpkg1', output_file)
+    except (OSError, IOError), err:
+        cleanupPackage(output_pkg_path)
+        fail('Error creating file at %s: %s' 
+                              % (output_file, err))
+
+
+def write_package_version(output_pkg_path):
+    '''Creates Contents/Resources/package_version file'''
+    output_file = os.path.join(output_pkg_path, 
+                               'Contents/Resources/package_version')
+    try:
+        writefile('major: 1\nminor: 0', output_file)
+    except (OSError, IOError), err:
+        cleanupPackage(output_pkg_path)
+        fail('Error creating file at %s: %s' 
+                              % (output_file, err))
+
+
+def makeArchiveAndBom(output_pkg_path):
+    '''Creates an empty Archive.pax.gz and Archive.bom file'''
+    emptydir = os.path.join(TMPDIR, 'EmptyDir')
+    if os.path.exists(emptydir):
+        try:
+            os.rmdir(emptydir)
+        except OSError, err:
+            print >> sys.stderr, ('Existing dir at %s' % emptydir)
+            exit(1)
+    try:
+        os.mkdir(emptydir)
+    except OSError, err:
+        cleanupPackage(output_pkg_path)
+        fail('Can\'t create dir at %s' % emptydir)
+    
+    # Make an Archive.pax.gz of the contents of the empty directory
+    archiveName = os.path.join(output_pkg_path, 'Contents/Archive.pax')
+    # record our current working dir
+    cwd = os.getcwd()
+    # change into our EmptyDir so we can use pax to archive the 
+    # (non-existent) contents
+    os.chdir(emptydir)
+    try:
+        subprocess.check_call(
+            ['/bin/pax', '-w', '-x', 'cpio', '-f', archiveName, '.'])
+    except subprocess.CalledProcessError, err:
+        cleanupPackage(output_pkg_path)
+        fail('Can\'t create archive at %s: %s' 
+                              % (archiveName, err))
+    # change working dir back
+    os.chdir(cwd)
+    try:
+        subprocess.check_call(['/usr/bin/gzip', archiveName])
+    except subprocess.CalledProcessError, err:
+        cleanupPackage(output_pkg_path)
+        fail('Can\'t gzip archive at %s: %s' 
+                              % (archiveName, err))
+    # now make a BOM file
+    bomName = os.path.join(output_pkg_path, 'Contents/Archive.bom')
+    try:
+        subprocess.check_call(['/usr/bin/mkbom', emptydir, bomName])
+    except subprocess.CalledProcessError, err:
+        cleanupPackage(output_pkg_path)
+        fail('Can\'t make BOM file at %s: %s' 
+                              % (bomName, err))
+    try:
+        os.rmdir(emptydir)
+    except OSError:
+        pass
+
+
+def getOSversionInfoFromDist(distfile):
+    '''Gets osVersion and osBuildVersion if present in
+    dist file for OSXInstall.mpkg'''
+    try:
+        dom = minidom.parse(distfile)
+    except ExpatError, err:
+        print >> sys.stderr, 'Error parsing %s: %s' % (distfile, err)
+        return None, None
+    osVersion = None
+    osBuildVersion = None
+    elements = dom.getElementsByTagName('options')
+    if len(elements):
+        options = elements[0]
+        if 'osVersion' in options.attributes.keys():
+            osVersion = options.attributes['osVersion'].value
+        if 'osBuildVersion' in options.attributes.keys():
+            osBuildVersion = options.attributes['osBuildVersion'].value
+    return osVersion, osBuildVersion
+
+
+def getItemsFromDist(filename):
+    '''Gets the title, script, installation-check and volume-check elements
+    from an OSXInstall.mpkg distribution file'''
+    try:
+        dom = minidom.parse(filename)
+    except ExpatError:
+        print >> sys.stderr, 'Error parsing %s' % filename
+        return None
+    item_dict = {'title': '',
+                 'script': '',
+                 'installation_check': '',
+                 'volume_check': ''}
+    title_elements = dom.getElementsByTagName('title')
+    if len(title_elements):
+        item_dict['title'] = title_elements[0].firstChild.wholeText
+    script_elements = dom.getElementsByTagName('script')
+    if len(script_elements):
+        item_dict['script'] = script_elements[0].toprettyxml()
+    installation_check_elements = dom.getElementsByTagName('installation-check')
+    if len(installation_check_elements):
+        item_dict['installation_check'] = \
+            installation_check_elements[0].toprettyxml()
+    volume_check_elements = dom.getElementsByTagName('volume-check')
+    if len(volume_check_elements):
+        item_dict['volume_check'] = volume_check_elements[0].toprettyxml()
+    return item_dict
+
+
+def make_distribution(output_pkg_path, source_pkg_dist, 
+                      installKBytes=DEFAULT_INSTALLKBYTES):
+    '''Makes a distribution file for the target package based on one
+    from OSInstall.mpkg in the app or InstallESD.dmg'''
+    
+    item_dict = getItemsFromDist(source_pkg_dist)
+    
+    # disable the check for command line installs
+    item_dict['script'] = item_dict['script'].replace(
+        'system.env.COMMAND_LINE_INSTALL',
+        'system.env.COMMAND_LINE_INSTALL_DISABLED')
+
+    dist_header = ('<?xml version="1.0" encoding="utf-8"?>\n'
+                   '<installer-script minSpecVersion="1.000000">\n')
+
+    dist_title = '    <title>%s</title>' % item_dict.get('title', 'Mac OS X')
+    dist_options = '''
+    <options customize="never" allow-external-scripts="no" rootVolumeOnly="false"/>'
+    '''
+
+    dist_choices_outline = '''
+    <choices-outline>
+        <line choice='manual'/>
+    </choices-outline>
+    '''
+
+    dist_choice_id = '''
+    <choice id='manual'>
+        <pkg-ref id='manual' auth='Root'>.</pkg-ref>
+    </choice>
+    '''
+
+    dist_pkg_ref = '''
+    <pkg-ref id='manual' installKBytes='%s' onConclusion='RequireRestart' version='1.0'/>''' % installKBytes
+
+    dist_footer = '\n</installer-script>'
+
+    dist = dist_header + dist_title + dist_options 
+    dist += item_dict['script'] 
+    dist += '\n    ' + item_dict['installation_check']
+    dist += '\n    ' + item_dict['volume_check']
+    dist += dist_choices_outline + dist_choice_id + dist_pkg_ref + dist_footer
+
+    output_file = os.path.join(output_pkg_path, 'Contents/distribution.dist')
+    try:
+        writefile(dist, output_file)
+    except (OSError, IOError), err:
+        cleanupPackage(output_pkg_path)
+        fail('Error creating file at %s: %s' 
+                              % (output_file, err))
+
+
+def copyLocalizedResources(pkgpath, source_pkg_resources):
+    '''Copies Resources/English.lprog/*.strings to 
+    Contents/Resources/en.lproj of target package so InstallCheck
+    and VolumeCheck scripts can display meaningful error messages'''
+    
+    source_dir = os.path.join(source_pkg_resources, 'English.lproj')
+    dest_dir = os.path.join(pkgpath, 'Contents/Resources/en.lproj')
+    if os.path.isdir(source_dir) and os.path.isdir(dest_dir):
+        for item in os.listdir(source_dir):
+            if item.endswith('.strings'):
+                itempath = os.path.join(source_dir, item)
+                try:
+                    shutil.copy(itempath, dest_dir)
+                except IOError:
+                    # not fatal, but warn anyway.
+                    print >> sys.stderr, (
+                        'Could not copy %s to %s'% (itempath, dest_dir))
+
+
+def copy_postflight_script(output_pkg_path):
+    '''Copies the postflight script into the output package'''
+    destination = os.path.join(output_pkg_path, 'Contents/Resources/postflight')
+    mydir = os.path.dirname(os.path.abspath(__file__))
+    postflight_script_name = 'installosxpkg_postflight'
+    locations = [os.path.join(mydir, postflight_script_name),
+                 os.path.join(mydir, 'Resources', postflight_script_name)]
+    for location in locations:
+        if os.path.exists(location):
+            try:
+                shutil.copy(location, destination)
+                # make sure it's executable
+                subprocess.check_call(
+                    ['/bin/chmod', 'a+x', destination])
+                return True
+            except (OSError, subprocess.CalledProcessError), err:
+                cleanupPackage(output_pkg_path)
+                fail('Error with postflight script: %s' % err)
+    # if we get here, we couldn't find the postflight script.
+    cleanupPackage(output_pkg_path)
+    fail('Could not find postflight script.')
+
+
+def makePackage(output_pkg_path, expanded_osinstall_mpkg, 
+                os_version, build_number, pkg_id=None):
+    '''Makes our output package'''
+    makePkgDirs(output_pkg_path)
+    makeArchiveAndBom(output_pkg_path)
+    makeInfoPlist(output_pkg_path, os_version, build_number,
+                  pkg_id=pkg_id)
+    writePkgInfo(output_pkg_path)
+    makeDescriptionPlist(output_pkg_path, os_version=os_version,
+                         build_number=build_number)
+    write_package_version(output_pkg_path)
+    copy_postflight_script(output_pkg_path)
+    # copy some items from OSInstall.mpkg
+    dist_file = os.path.join(expanded_osinstall_mpkg, 'Distribution')
+    make_distribution(output_pkg_path, dist_file, installKBytes=8*1024*1024)
+    source_pkg_resources = os.path.join(expanded_osinstall_mpkg, 'Resources')
+    copyLocalizedResources(output_pkg_path, source_pkg_resources)
+
+def get_dir_size(some_dir):
+    '''Gets the total size of some_dir. Very helpful in determining
+    the size of bundle packages.'''
+    total_size = 0
+    for dirpath, unused_dirnames, filenames in os.walk(some_dir):
+        for filename in filenames:
+            filepath = os.path.join(dirpath, filename)
+            total_size += os.path.getsize(filepath)
+    return total_size
+
+
+def get_size_of_all_packages(pkglist):
+    '''Gets the total size of all the extra packages'''
+    total_pkg_size = 0
+    for item in pkglist:
+        if os.path.isdir(item):
+            total_pkg_size += get_dir_size(item)
+        else:
+            total_pkg_size += os.path.getsize(item)
+    return total_pkg_size/1024
+
+
+def get_available_free_space_in_dmg(some_dmg):
+    '''Returns free disk space on some_dmg in Kbytes'''
+    (mountpoints, unused_shadowpath) = mountdmg(some_dmg)
+    if mountpoints:
+        stat = os.statvfs(mountpoints[0])
+        free  = stat.f_bavail * stat.f_frsize
+        unmountdmg(mountpoints[0])
+        return int(free/1024)
+    else:
+        return -1
+
+
+def expandOSInstallMpkg(osinstall_mpkg):
+    '''Expands the flat OSInstall.mpkg We need the Distribution file
+    and some .strings files from within. Returns path to the exapnded
+    package.'''
+    expanded_osinstall_mpkg = os.path.join(TMPDIR, 'OSInstall_mpkg')
+    cmd = ['/usr/sbin/pkgutil', '--expand', osinstall_mpkg,
+           expanded_osinstall_mpkg]
+    try:
+        subprocess.check_call(cmd)
+    except subprocess.CalledProcessError:
+        fail('Failed to expand %s' % osinstall_mpkg)
+    return expanded_osinstall_mpkg
+
+
+def downloadURL(URL, to_file=None):
+    '''Downloads URL to the current directory or as string'''
+    cmd = ['/usr/bin/curl', '--silent', '--show-error', '--url', URL]
+    if to_file:
+        cmd.extend(['-o', to_file])
+    proc = subprocess.Popen(cmd, shell=False, bufsize=-1,
+                            stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = proc.communicate()
+    if proc.returncode:
+        print >> sys.stderr, 'Error %s retrieving %s' % (proc.returncode, URL)
+        print >> sys.stderr, err
+        return None
+    if to_file:
+        return to_file
+    else:
+        return output
+
+
+def findIncompatibleAppListPkgURL(catalog_url, package_name):
+    '''Searches SU catalog to find a download URL for 
+    package_name. If there's more than one, returns the 
+    one with the most recent PostDate.'''
+
+    def sort_by_PostDate(a, b):
+        """Internal comparison function for use with sorting"""
+        return cmp(b['PostDate'], a['PostDate'])
+
+    catalog_str = downloadURL(catalog_url)
+    try:
+        catalog = plistlib.readPlistFromString(catalog_str)
+    except ExpatError:
+        print >> sys.stderr, 'Could not parse catalog!'
+        return None
+    product_list = []
+    if 'Products' in catalog:
+        for product_key in catalog['Products'].keys():
+            product = catalog['Products'][product_key]
+            for package in product.get('Packages', []):
+                url = package.get('URL','')
+                if url.endswith(package_name):
+                    product_list.append({'PostDate': product['PostDate'],
+                                         'URL': url})
+        if product_list:
+            product_list.sort(sort_by_PostDate)
+            return product_list[0]['URL']
+    return None
+
+
+def getPkgAndMakeIndexSproduct(destpath, os_vers='10.7'):
+    '''Gets IncompatibleAppList package and creates index.sproduct'''
+
+    LION_PKGNAME = 'MacOS_10_7_IncompatibleAppList.pkg'
+    LION_CATALOG_URL = ('http://swscan.apple.com/content/catalogs/others/'
+                        'index-lion-snowleopard-leopard.merged-1.sucatalog')
+
+    MTN_LION_PKGNAME = 'OSX_10_8_IncompatibleAppList.pkg'
+    MTN_LION_CATALOG_URL = ('https://swscan.apple.com/content/catalogs/others/'
+                            'index-mountainlion-lion-snowleopard-leopard'
+                            '.merged-1.sucatalog')
+
+    if os_vers.startswith('10.7'):
+        catalog_url = LION_CATALOG_URL
+        package_name = LION_PKGNAME
+        os_vers = '10.7'
+    elif os_vers.startswith('10.8'):
+        catalog_url = MTN_LION_CATALOG_URL
+        package_name = MTN_LION_PKGNAME
+        os_vers = '10.8'
+    else:
+        print >> sys.stderr, 'Unsupported OS version!'
+        return
+
+    destpath = os.path.abspath(destpath)
+    if not os.path.isdir(destpath):
+        print >> sys.stderr, 'Directory %s doesn\'t exist!' % destpath
+        return
+
+    url = findIncompatibleAppListPkgURL(catalog_url, package_name)
+    if url:
+        package_path = os.path.join(destpath, package_name)
+        print 'Downloading %s to %s...' % (url, package_path)
+        package_path = downloadURL(url, to_file=package_path)
+        if package_path and os.path.exists(package_path):
+            # make index.sproduct
+            pkg_info = {}
+            pkg_info['Identifier'] = 'com.apple.pkg.CompatibilityUpdate'
+            pkg_info['Size'] = int(os.path.getsize(package_path))
+            pkg_info['URL'] = package_name
+            #pkg_info['Version'] = os_vers
+            # nope. Version is 10.7 even for ML (!)
+            pkg_info['Version'] = '10.7'
+            index_dict = {}
+            index_dict['Packages'] = [pkg_info]
+            plist_path = os.path.join(destpath, 'index.sproduct')
+            print "Writing index.sproduct to %s..." % plist_path
+            try:
+                plistlib.writePlist(index_dict, plist_path)
+            except OSError, err:
+                print >> sys.stderr, 'Write error: %s' % err
+        else:
+            print >> sys.stderr, 'Couldn\'t download %s' % url
+    else:
+        print >> sys.stderr, 'Couldn\'t find IncompatibleAppList package.'
+        
+        
+def makeEmptyInstallerChoiceChanges(output_pkg_path):
+    '''Creates an empty MacOSXInstaller.choiceChanges file'''
+    destpath = os.path.join(output_pkg_path, 
+        'Contents/Resources/Mac OS X Install Data',
+        'MacOSXInstaller.choiceChanges')
+    changes = []
+    try:
+        plistlib.writePlist(changes, destpath)
+    except OSError, err:
+        print >> sys.stderr, 'Error writing %s: %s' % (destpath, err)
+
+
+class AddPackageError(Exception):
+    '''Errors generated by addPackagesToInstallESD'''
+    pass
+
+
+def addPackagesToInstallESD(installesd_dmg, packages, output_dmg_path):
+    '''Adds additional packages to the InstallESD.dmg and creates an 
+    OSInstall.collection file for use by the installer. New dmg is
+    created at output_dmg_path'''
+    
+    # generate OSInstall.collection pkg_array
+    # array needs OSInstall.mpkg twice at the beginning
+    # no idea why
+    pkg_array = ['/System/Installation/Packages/OSInstall.mpkg',
+                 '/System/Installation/Packages/OSInstall.mpkg']
+    for pkg in packages:
+        pkgname = os.path.basename(pkg)
+        pkg_path = os.path.join('/System/Installation/Packages', pkgname)
+        pkg_array.append(pkg_path)
+
+    # mount InstallESD.dmg with shadow
+    print 'Mounting %s...' % installesd_dmg
+    mountpoints, shadowpath = mountdmg(installesd_dmg, use_shadow=True)
+    if not mountpoints:
+        raise AddPackageError('Nothing mounted from InstallESD.dmg')
+
+    # copy additional packages to Packages directory
+    mountpoint = mountpoints[0]
+    packages_dir = os.path.join(mountpoint, 'Packages')
+    print 'Copying additional packages to InstallESD/Packages/:'
+    try:
+        for pkg in packages:
+            if os.path.isdir(pkg):
+                destination = os.path.join(packages_dir, os.path.basename(pkg))
+                print '    Copying bundle package %s' % pkg
+                shutil.copytree(pkg, destination)
+            else:
+                print '    Copying flat package %s' % pkg
+                shutil.copy(pkg, packages_dir)
+    except IOError, err:
+        unmountdmg(mountpoint)
+        raise AddPackageError('Error %s copying packages to disk image' % err)
+
+    # create OSInstall.collection in Packages directory
+    osinstall_collection_path = os.path.join(
+        packages_dir, 'OSInstall.collection')
+    print "Creating %s" % osinstall_collection_path
+    try:
+        plistlib.writePlist(pkg_array, osinstall_collection_path)
+    except ExpatError:
+        raise AddPackageError('Error %s creating OSInstall.collection' % err)
+
+    # unmount InstallESD.dmg
+    print 'Unmounting %s...' % installesd_dmg
+    unmountdmg(mountpoint)
+
+    # convert InstallESD.dmg + shadow to UDZO image
+    print 'Creating disk image at %s...' % output_dmg_path
+    cmd = ['/usr/bin/hdiutil', 'convert', '-format', 'UDZO', 
+           '-o', output_dmg_path, installesd_dmg, '-shadow', shadowpath]
+    try:
+        subprocess.check_call(cmd)
+    except subprocess.CalledProcessError, err:
+        raise AddPackageError(
+            'Failed to create %s at: %s' % (output_dmg_path, err))
+
+
+TMPDIR = None
+def main():
+    '''Builds a custom package that installs OS X. You may specify additional 
+    packages to install after the OS is installed'''
+    global TMPDIR
+
+    usage = ('Usage: %prog --source InstallOSX.app|InstallESD.dmg\n'
+        '                           [--pkg path/to/additional.pkg]\n'
+        '                           [--output path/to/InstallOSX.pkg]\n'
+        '                           [--org com.example]\n'
+        '                           [--plist path/to/config.plist]\n\n'
+        '    %prog creates a customized Lion or Mountain Lion\n'
+        '    installation package containing the contents of the original\n'
+        '    InstallESD.dmg plus any additional packages provided. Additional\n'
+        '    packages will be installed in the order you provide them at the\n'
+        '    command-line.')
+
+    parser = optparse.OptionParser(usage=usage)
+    parser.add_option('--source', '-s',
+        help='Required unless specified via plist. Path to Install Mac '
+        'OS X Lion.app or Install OS X Mountain Lion.app or InstallESD.dmg')
+    parser.add_option('--pkg', '-p', action="append", dest='packages',
+        metavar='PACKAGE',
+        help='Optional. An addtional package to include for installation. '
+        'May be specified more than once.')
+    parser.add_option('--output', '-o', help='Optional. Path for output pkg. '
+        'Defaults to current working directory.')
+    parser.add_option('--identifier', '--id', 
+        help='Optional. Package idenitifier for the package. Defaults to '
+        '"com.googlecode.munki.install(mountain)lion.pkg"')
+    parser.add_option('--plist', help='Optional. Path to an XML plist file '
+        'containing key/value pairs for Source, Output, Packages, and '
+        'Organization.')
+    options, arguments = parser.parse_args()
+
+    # check to see if we're root
+    # need to be root to copy things into the DMG with the right
+    # ownership and permissions
+    if os.geteuid() != 0:
+        print >> sys.stderr, 'You must run this as root, or via sudo!'
+        exit(-1)
+    
+    plist_options = {}
+    if options.plist:
+        try:
+            plist_options = plistlib.readPlist(options.plist)
+        except (ExpatError, IOError), err:
+            fail('Could not read %s: %s' % (options.plist, err))
+    
+    if not options.source and not 'Source' in plist_options:
+        print >> sys.stderr, ('ERROR: Must have --source option!')
+        parser.print_usage()
+        exit(1)
+
+    TMPDIR = tempfile.mkdtemp(dir='/tmp')
+    source = options.source or plist_options.get('Source')
+    source = source.rstrip('/')
+    if source.endswith('.app'):
+        if not os.path.isdir(source):
+            fail('%s doesn\'t exist or isn\'t an app!' % source)
+        installesd_dmg = os.path.join(
+            source, 'Contents/SharedSupport/InstallESD.dmg')
+        osinstall_mpkg = os.path.join(
+                source, 'Contents/SharedSupport/OSInstall.mpkg')
+        if (not os.path.exists(installesd_dmg) or 
+            not os.path.exists(osinstall_mpkg)):
+            fail('%s doesn\'t appear to be an OS X installer application!'
+                % source)
+        expanded_osinstall_mpkg = expandOSInstallMpkg(osinstall_mpkg)
+        distfile = os.path.join(expanded_osinstall_mpkg, 'Distribution')
+        os_version, build_number = getOSversionInfoFromDist(distfile)
+
+    elif source.endswith('.dmg'):
+        if not os.path.exists(source):
+            fail('%s doesn\'t exist!' % source)
+        installesd_dmg = source
+        mountpoints, unused_shadowpath = mountdmg(installesd_dmg)
+        if not mountpoints:
+            fail('Could not mount diskimage %s' % installesd_dmg)
+        mountpoint = mountpoints[0]
+        osinstall_mpkg = os.path.join(mountpoint, 'Packages/OSInstall.mpkg')
+        expanded_osinstall_mpkg = expandOSInstallMpkg(osinstall_mpkg)
+        distfile = os.path.join(expanded_osinstall_mpkg, 'Distribution')
+        system_version_plist = os.path.join(
+            mountpoint, 'System/Library/CoreServices/SystemVersion.plist')
+        try:
+            version_info = plistlib.readPlist(system_version_plist)
+        except (ExpatError, IOError), err:
+            unmountdmg(mountpoint)
+            fail('Could not read %s: %s' % (system_version_plist, err))
+        unmountdmg(mountpoint)
+        os_version = version_info.get('ProductUserVisibleVersion')
+        build_number = version_info.get('ProductBuildVersion')
+
+    else:
+        fail('Unknown/unsupported source: %s' % source)
+
+    # Things we have now that we need:
+    # installesd_dmg: path to the InstallESD.dmg file
+    # os_version: string like '10.7.4'
+    # build_number: string like '11E53'
+    # expanded_osinstall_mpkg: path to unflattened OSInstall.mpkg
+    # distfile: path to Distribution file in OSInstall.mpkg
+
+    print '----------------------------------------------------------------'
+    print 'InstallESD.dmg: %s' % installesd_dmg
+    print 'OS Version: %s' % os_version
+    print 'OS Build: %s' % build_number
+
+    if DEBUG:
+        print 'expanded_osinstall_mpkg: %s' % expanded_osinstall_mpkg
+        print 'distfile: %s' % distfile
+    print '----------------------------------------------------------------'
+
+    # Figure out where we will be writing this...
+    pkgname = 'InstallOSX_%s_%s.pkg' % (os_version, build_number)
+    output_pkg_path = os.path.abspath(os.path.join('.', pkgname))
+
+    output = options.output or plist_options.get('Output')
+    if output:
+        if output.endswith('.pkg'):
+            # we've been given a full path including the package name
+            output_pkg_path = os.path.abspath(output)
+        else:
+            # it better be a pre-existing directory
+            if not os.path.isdir(output):
+                fail(
+                    'Directory %s not found!' % output)
+            else:
+                output_pkg_path = os.path.abspath(
+                    os.path.join(output, pkgname))
+
+    if os.path.exists(output_pkg_path):
+        fail('%s already exists!' % output_pkg_path)
+
+    # now we have an output path
+    print 'Output package path: %s' % output_pkg_path
+
+    packages = options.packages or plist_options.get('Packages')
+    if packages:
+        # make sure they all exist and look like packages
+        print 'Additional packages:'
+        print '----------------------------------------------------------------'
+        for pkg in packages:
+            if (not pkg.endswith('.pkg') and not pkg.endswith('.mpkg')):
+                fail('%s doesn\'t look like a package!' % pkg)
+            if not os.path.exists(pkg):
+                fail('Package %s not found!' % pkg)
+            print os.path.basename(pkg)
+        print '----------------------------------------------------------------'
+        # make sure we have enough space on DMG
+        available_disk_space = get_available_free_space_in_dmg(installesd_dmg)
+        if available_disk_space == -1:
+            fail('Could not mount disk image %s' % installesd_dmg)
+        total_package_size = get_size_of_all_packages(packages)
+
+        if total_package_size + 100 > available_disk_space:
+            print >> sys.stderr, (
+                'Not enough space to copy all packages to InstallESD.dmg!')
+            print >> sys.stderr, (
+                'Available space: %s KBytes' % available_disk_space)
+            print >> sys.stderr, (
+                'Total package size: %s Kbytes' % total_package_size)
+            fail()
+
+    pkg_id = (options.identifier or plist_options.get('Identifier'))
+
+    # we have everything we need.
+    print 'Creating package wrapper...'
+    makePackage(output_pkg_path, expanded_osinstall_mpkg, 
+                os_version, build_number, pkg_id=pkg_id)
+
+    # if we have any failures after this point, we should be sure to
+    # clean up the broken package as well as our TMPDIR
+    
+    print 'Creating MacOSXInstaller.choiceChanges...'
+    makeEmptyInstallerChoiceChanges(output_pkg_path)
+
+    print '----------------------------------------------------------------'
+    print 'Downloading and adding IncompatibleAppList pkg...'
+    destpath = os.path.join(output_pkg_path, 
+                            'Contents/Resources/Mac OS X Install Data')
+    getPkgAndMakeIndexSproduct(destpath, os_vers=os_version)
+
+    print '----------------------------------------------------------------'
+    print 'Copying InstallESD into package...'
+    output_dmg_path = os.path.join(output_pkg_path, 
+                                   'Contents/Resources/InstallESD.dmg')
+    if packages:
+        try:
+            addPackagesToInstallESD(
+                installesd_dmg, packages, output_dmg_path)
+        except AddPackageError, err:
+            cleanupPackage(output_pkg_path)
+            fail(err)
+    else:
+        try:
+            shutil.copy(installesd_dmg, output_dmg_path)
+        except OSError, err:
+            cleanupPackage(output_pkg_path)
+            fail('Copy error: %e' % err)
+
+    print '----------------------------------------------------------------'
+    print 'Done! Completed package at: %s' % output_pkg_path
+    cleanUp()
+
+
+if __name__ == '__main__':
+    main()
+
