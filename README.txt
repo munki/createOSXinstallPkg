@@ -6,105 +6,106 @@ What you need
 
 This toolset, which includes:
 
- * createOSXinstallPkg
- * Resources/installosxpkg_postflight
+    createOSXinstallPkg
+    Resources/installosxpkg_postflight
 
-You may put the toolset anywhere you'd like, but keep the Resources folder and its contents in the same directory as createOSXinstallPkg
+You may put the toolset anywhere you'd like, but keep the Resources folder and its contents in the same directory as `createOSXinstallPkg`.
 
-You'll also need and installation source for Lion or Mountain Lion: a copy of the "Install Mac OS X Lion.app", "Install OS X Mountain Lion.app", or a copy of the "InstallESD.dmg" contained within one of these applications.
+You'll also need an installation source for Lion or Mountain Lion: a copy of the "Install Mac OS X Lion.app", "Install OS X Mountain Lion.app", or a copy of the "InstallESD.dmg" contained within one of these applications.
 
 Finally, and most importantly, you'll need the rights to install Lion or Mountain Lion on the machines you manage. Just because this tool allows you to create an OS X installation package does not mean it is legal for your organization to install it on all your Macs.
 
 How to use it
 -------------
 
-You must run createOSXinstallPkg with root privileges.
+You must run `createOSXinstallPkg` with root privileges.
 
-sudo ./createOSXinstallPkg --source /path/to/Install\ OS\ X\ Mountain\ Lion.app
+    sudo ./createOSXinstallPkg --source /path/to/Install\ OS\ X\ Mountain\ Lion.app
 
-This creates an installation package in the current directory named "InstallOSX_<version>_<build>.pkg", where "version" and "build" are the version and build numbers of the OS X version that will be installed.
-
-
-sudo ./createOSXinstallPkg --source /path/to/Install\ OS\ X\ Mountain\ Lion.app --output /path/to/some/directory/
-
-sudo ./createOSXinstallPkg --source /path/to/Install\ OS\ X\ Mountain\ Lion.app --output /path/to/output.pkg
-
-Adding the '--output' option allows you to specify an alternate location and/or name for the output package.
+This creates an installation package in the current directory named `InstallOSX_[version]_[build].pkg`, where "version" and "build" are the version and build numbers of the OS X version that will be installed.
 
 
-sudo ./createOSXinstallPkg --source /path/to/Install\ Mac\ OS\ X\ Lion.app --pkg /path/to/LocalAdmin.pkg --pkg /path/to/DisableSetupAssistant.pkg
+    sudo ./createOSXinstallPkg --source /path/to/Install\ OS\ X\ Mountain\ Lion.app --output /path/to/some/directory/
 
-The '--pkg' option allows you to add one or more packages to be installed after the OS is installed. You may specify multiple packages. They will be installed in the order given at the command line.
+    sudo ./createOSXinstallPkg --source /path/to/Install\ OS\ X\ Mountain\ Lion.app --output /path/to/output.pkg
 
-
-sudo ./createOSXinstallPkg --source /path/to/Install\ Mac\ OS\ X\ Lion.app --identifier 'com.example.installosx.pkg'
-
-The '--identifier' option allows you to change the package identifier, which is by default 'com.googlecode.munki.installlion.pkg' or 'com.googlecode.munki.installmountainlion.pkg'
+Adding the `--output` option allows you to specify an alternate location and/or name for the output package.
 
 
-sudo ./createOSXinstallPkg --plist /path/to/xml.plist
+    sudo ./createOSXinstallPkg --source /path/to/Install\ Mac\ OS\ X\ Lion.app --pkg /path/to/LocalAdmin.pkg --pkg /path/to/DisableSetupAssistant.pkg
 
-Options to createOSXinstallPkg can be stored in a plist file. This allows you to save the "ingredients" and "recipe" for a package for future reuse.
+The `--pkg` option allows you to add one or more packages to be installed after the OS is installed. You may specify multiple packages. They will be installed in the order given at the command line.
+
+
+    sudo ./createOSXinstallPkg --source /path/to/Install\ Mac\ OS\ X\ Lion.app --identifier 'com.example.installosx.pkg'
+
+The `--identifier` option allows you to change the package identifier, which is by default 'com.googlecode.munki.installlion.pkg' or 'com.googlecode.munki.installmountainlion.pkg'
+
+
+    sudo ./createOSXinstallPkg --plist /path/to/xml.plist
+
+Options to `createOSXinstallPkg` can be stored in a plist file. This allows you to save the "ingredients" and "recipe" for a package for future reuse.
 
 Example plist:
 
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Source</key>
-    <string>/Volumes/Data/Applications/Install OS X Mountain Lion.app</string>
-    <key>Output</key>
-    <string>/Volumes/Data/OSX_Install_Packages</string>
-    <key>Packages</key>
-    <array>
-        <string>/Volumes/Data/Packages/LocalAdminAcct.pkg</string>
-        <string>/Volumes/Data/Packages/DisableSetupAssistant.pkg</string>
-        <string>/Volumes/Data/Packages/munkitools-0.8.3.1610.0.mpkg</string>
-        <string>/Volumes/Data/Packages/munki_kickstart.pkg</string>
-    </array>
-    <key>Identifier</key>
-    <string>com.example.installmountainlion.pkg</string>
-</dict>
-</plist>
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN"      "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>Source</key>
+        <string>/Volumes/Data/Applications/Install OS X Mountain Lion.app</string>
+        <key>Output</key>
+        <string>/Volumes/Data/OSX_Install_Packages</string>
+        <key>Packages</key>
+        <array>
+            <string>/Volumes/Data/Packages/LocalAdminAcct.pkg</string>
+            <string>/Volumes/Data/Packages/DisableSetupAssistant.pkg</string>
+            <string>/Volumes/Data/Packages/munkitools-0.8.3.1610.0.mpkg</string>
+            <string>/Volumes/Data/Packages/munki_kickstart.pkg</string>
+        </array>
+        <key>Identifier</key>
+        <string>com.example.installmountainlion.pkg</string>
+    </dict>
+    </plist>
 
-If an option is specified in the plist and explicitly at the command-line, the command-line "wins". (Note this means also that since multiple packages can be specified, that packages in a plist and packages at the command-line are _not_ merged; the packages given at the command-line are the _only_ packages used.)
+If an option is specified in the plist and also explicitly at the command-line, the command-line "wins". (Note this means also that since multiple packages can be specified, that packages in a plist and packages at the command-line are _not_ merged; the packages given at the command-line are the _only_ packages used.)
 
 
 How it works
-============
+------------
 
-The package generated by createOSXinstallPkg is a 'payload-free' package -- that is, it does not install anything from the traditional Archive.pax.gz payload found in most packages. Instead, the real work is done as a package postflight script located at [PACKAGE]/Contents/Resources/postflight.
+The package generated by `createOSXinstallPkg` is a 'payload-free' package -- that is, it does not install anything from the traditional Archive.pax.gz payload found in most packages. Instead, the real work is done as a package postflight script located at `[PACKAGE]/Contents/Resources/postflight`.
 
 The postflight script performs the actions that the GUI "Install Mac OS X Lion" or "Install OS X Mountain Lion" application does when you choose to install OS X.
 
-Those actions are: 
-  1) Create a "Mac OS X Install Data" directory at the root of the target volume.
-  2) Mount the InstallESD.dmg disk image.
-  3) Copy the kernelcache and boot.efi files from the disk image to the "Mac OS X Install Data" directory. (The kernelcache is copied to the Recovery HD helper partition if the target volume is encrypted with FileVault 2.)
-  4) Unmount (eject) the InstallESD.dmg disk image.
-  5) If the InstallLion.pkg is on the same volume as the target volume, create a hard link to the InstallESD.dmg disk image in "Mac OS X Install Data", otherwise copy the InstallESD.dmg disk image to that directory.
-  6) Create a com.apple.Boot.plist file in the "Mac OS X Install Data" directory which tells the kernel how to mount the disk image to use for booting. (This file is instead created on the the Recovery HD helper partition if the target volume is encrypted with FileVault 2.)
-  7) Create a minstallconfig.xml file, which tells the OS X Installer what to install and to which volume to install it. It also provides a path to a MacOSXInstaller.choiceChanges file if one has been included in the package.
-  8) Create an index.sproduct file and an OSInstallAttr.plist in the "Mac OS X Install Data" directory. These are also used by the OS X Installer.
-  9) Set a variable in nvram that the OS X Installer uses to find the product install info after reboot.
-  10) Use the `bless` command to cause the Mac to boot from the kernel files copied to the "Mac OS X Install Data" directory.
+Those actions are:
+
+  1. Create a `Mac OS X Install Data` directory at the root of the target volume.
+  2. Mount the `InstallESD.dmg` disk image.
+  3. Copy the `kernelcache` and `boot.efi` files from the disk image to the `Mac OS X Install Data` directory. (The `kernelcache` is copied to the Recovery HD helper partition if the target volume is encrypted with FileVault 2.)
+  4. Unmount (eject) the `InstallESD.dmg` disk image.
+  5. If the `InstallLion.pkg` is on the same volume as the target volume, create a hard link to the `InstallESD.dmg` disk image in `Mac OS X Install Data`, otherwise copy the `InstallESD.dmg` disk image to that directory.
+  6. Create a `com.apple.Boot.plist` file in the `Mac OS X Install Data` directory which tells the kernel how to mount the disk image to use for booting. (This file is instead created on the the Recovery HD helper partition if the target volume is encrypted with FileVault 2.)
+  7. Create a `minstallconfig.xml` file, which tells the OS X Installer what to install and to which volume to install it. It also provides a path to a `MacOSXInstaller.choiceChanges` file if one has been included in the package.
+  8. Create an `index.sproduct` file and an `OSInstallAttr.plist` in the `Mac OS X Install Data` directory. These are also used by the OS X Installer.
+  9. Set a variable in nvram that the OS X Installer uses to find the product install info after reboot.
+  10. Use the `bless` command to cause the Mac to boot from the kernel files copied to the `Mac OS X Install Data` directory.
   
 Since most of the work is done with a postflight script, and since that script may need to do a lengthy copy of almost 4GB of data (if the package is not on the target volume), you may see a long delay at the "Running package scripts" stage of installation. This is normal. (Annoyingly, the Installer.app displays "Install time remaining: Less than a minute" for several minutes during this stage.)
 
 The next step would be to reboot, but the postflight script does not do this; it just exits. The package is marked as requiring a reboot, so whatever mechanism is used to install the package is responsible for rebooting as soon as possible after the install.
 
-Upon reboot, the machine boots and runs the OS X Installer just as if you had run the "Install Mac OS X Lion"/"Install OS X Mountain Lion" application manually. It creates or updates a "Recovery HD" partition and installs OS X on the target volume, displaying the OS X Installer GUI. When installation is complete, the machine reboots a second time, this time booting from the new OS X installation.
+Upon reboot, the machine boots and runs the OS X Installer just as if you had run the "Install Mac OS X Lion" or "Install OS X Mountain Lion" application manually. It creates or updates a "Recovery HD" partition and installs OS X on the target volume, displaying the OS X Installer GUI. When installation is complete, the machine reboots a second time, this time booting from the new OS X installation.
 
 
 Preinstall checks
 =================
 
-A "Distribution" file, located at InstallOSX.pkg/Contents/distribution.dist controls the InstallCheck and VolumeCheck logic.
+A "Distribution" file, located at `InstallOSX.pkg/Contents/distribution.dist` controls the InstallCheck and VolumeCheck logic.
 
-createOSXinstallPkg copies InstallCheck and VolumeCheck logic from the OSInstall.mpkg found in the Install.app or InstallESD.dmg. This means that the resulting package will use the same logic as Apple when deciding if a machine/volume is a valid install destination. (One exception -- createOSinstallPkg disables the check for command-line installs; without disabling this check you would not be able to install Lion or Mountain Lion using Munki or ARD or any other mechanism that uses the command-line /usr/sbin/installer.)
+`createOSXinstallPkg` copies InstallCheck and VolumeCheck logic from the OSInstall.mpkg found in the Install.app or InstallESD.dmg. This means that the resulting package will use the same logic as Apple when deciding if a machine/volume is a valid install destination. (One exception -- `createOSXinstallPkg` disables the check for command-line installs; without disabling this check you would not be able to install Lion or Mountain Lion using Munki or ARD or any other mechanism that uses the command-line `/usr/sbin/installer`.)
 
-The distribution.dist declares the install size is 8388608 KB (8* 1024 * 1024 KB, or 8GB), which should prevent attempted installation on volumes with less than 8GB free space. You can edit this number if you'd like.
+The `distribution.dist` declares the install size is 8388608 KB (8* 1024 * 1024 KB, or 8GB), which should prevent attempted installation on volumes with less than 8GB free space. You can edit this number if you'd like.
 
 
 Customizing the install
@@ -113,7 +114,7 @@ Customizing the install
 Installer choice changes
 ------------------------
 
-You'll find a "MacOSXInstaller.choiceChanges" file at InstallOSX.pkg/Contents/Resources/Mac OS X Install Data/MacOSXInstaller.choiceChanges
+You'll find a `MacOSXInstaller.choiceChanges` file at `InstallOSX.pkg/Contents/Resources/Mac OS X Install Data/MacOSXInstaller.choiceChanges`
 
 See `man installer` for more info on ChoiceChangesXML files.
 
@@ -123,9 +124,9 @@ Additional packages
 
 The most likely customization you will want to do is to add additional packages to be installed after the OS install. Some examples might include a package that keeps the Setup Assistant from running when the machine first starts up under Lion, or a package that triggers your software installation management system to run, check for, and install any updates on the first boot after OS X is installed.
 
-Additional packages are added to the InstallOSX.pkg by using the --pkg option to createOSXinstallPkg:
+Additional packages are added to the InstallOSX.pkg by using the `--pkg` option to `createOSXinstallPkg`:
 
-createOSXinstallPkg --source /path/to/Install\ Mac\ OS\ X\ Lion.app --pkg /path/to/LocalAdmin.pkg --pkg /path/to/DisableSetupAssistant.pkg
+    sudo ./createOSXinstallPkg --source /path/to/Install\ Mac\ OS\ X\ Lion.app --pkg /path/to/LocalAdmin.pkg --pkg /path/to/DisableSetupAssistant.pkg
 
 You can specify multiple packages. They will be installed in the order given.
 
@@ -134,6 +135,7 @@ Notes on additional packages
 ----------------------------
 
 The OS X install environment is very stripped down. There are many command-line tools that are not available when booted into this environment. Python and Ruby are not available, either. This can effect pre- and postflight scripts in packages. You may find that some packages that rely on pre- or postflight scripts to perform important tasks will fail to run properly in the OS X install environment. Check the install log at /var/log/install.log after the install is complete, or open the log window during installation to monitor pre- and postflight scripts.
+
 This issue may limit which packages you can use successfully in the OS X installation environment. You should carefully audit and pre- and post- scripts in any packages you add to your install to be certain they will run correctly in the OS X install environment.
 
 To get an idea what tools are available in the Lion install environment, boot into the Recovery HD. The tools available in this environment are the same as those available in the OS X Install environment.
