@@ -815,19 +815,20 @@ def main():
                 fail('Package %s not found!' % pkg)
             print os.path.basename(pkg)
         print '----------------------------------------------------------------'
+        total_package_size = get_size_of_all_packages(packages)
+        print 'Total additional package size: %s Kbytes' % total_package_size
+        print '----------------------------------------------------------------'
         # make sure we have enough space on DMG
+        print 'Checking available space on %s...' % installesd_dmg
         available_disk_space = get_available_free_space_in_dmg(installesd_dmg)
         if available_disk_space == -1:
             fail('Could not mount disk image %s' % installesd_dmg)
-        total_package_size = get_size_of_all_packages(packages)
 
         if total_package_size + 100 > available_disk_space:
             print >> sys.stderr, (
                 'Not enough space to copy all packages to InstallESD.dmg!')
             print >> sys.stderr, (
                 'Available space: %s KBytes' % available_disk_space)
-            print >> sys.stderr, (
-                'Total package size: %s Kbytes' % total_package_size)
             fail()
 
     pkg_id = (options.identifier or plist_options.get('Identifier'))
