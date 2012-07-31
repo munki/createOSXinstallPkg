@@ -337,7 +337,7 @@ def make_distribution(output_pkg_path, source_pkg_dist,
 
     dist_title = '    <title>%s</title>' % item_dict.get('title', 'Mac OS X')
     dist_options = '''
-    <options customize="never" allow-external-scripts="no" rootVolumeOnly="false"/>'
+    <options customize="never" allow-external-scripts="yes" rootVolumeOnly="false"/>'
     '''
 
     dist_choices_outline = '''
