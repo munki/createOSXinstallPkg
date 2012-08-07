@@ -674,7 +674,7 @@ def main():
     usage = ('Usage: %prog --source InstallOSX.app|InstallESD.dmg\n'
         '                           [--pkg path/to/additional.pkg]\n'
         '                           [--output path/to/InstallOSX.pkg]\n'
-        '                           [--org com.example]\n'
+        '                           [--identifier com.example.installosx.pkg]\n'
         '                           [--plist path/to/config.plist]\n\n'
         '    %prog creates a customized Lion or Mountain Lion\n'
         '    installation package containing the contents of the original\n'
