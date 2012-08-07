@@ -697,7 +697,7 @@ def main():
         '"com.googlecode.munki.install(mountain)lion.pkg"')
     parser.add_option('--plist', help='Optional. Path to an XML plist file '
         'containing key/value pairs for Source, Output, Packages, and '
-        'Organization.')
+        'Identifier.')
     options, arguments = parser.parse_args()
 
     # check to see if we're root
