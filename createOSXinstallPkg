@@ -733,34 +733,40 @@ def main():
             not os.path.exists(osinstall_mpkg)):
             fail('%s doesn\'t appear to be an OS X installer application!'
                 % source)
-        expanded_osinstall_mpkg = expandOSInstallMpkg(osinstall_mpkg)
-        distfile = os.path.join(expanded_osinstall_mpkg, 'Distribution')
-        os_version, build_number = getOSversionInfoFromDist(distfile)
 
     elif source.endswith('.dmg'):
-        if not os.path.exists(source):
-            fail('%s doesn\'t exist!' % source)
         installesd_dmg = source
-        mountpoints, unused_shadowpath = mountdmg(installesd_dmg)
-        if not mountpoints:
-            fail('Could not mount diskimage %s' % installesd_dmg)
-        mountpoint = mountpoints[0]
-        osinstall_mpkg = os.path.join(mountpoint, 'Packages/OSInstall.mpkg')
-        expanded_osinstall_mpkg = expandOSInstallMpkg(osinstall_mpkg)
-        distfile = os.path.join(expanded_osinstall_mpkg, 'Distribution')
-        system_version_plist = os.path.join(
-            mountpoint, 'System/Library/CoreServices/SystemVersion.plist')
-        try:
-            version_info = plistlib.readPlist(system_version_plist)
-        except (ExpatError, IOError), err:
-            unmountdmg(mountpoint)
-            fail('Could not read %s: %s' % (system_version_plist, err))
-        unmountdmg(mountpoint)
-        os_version = version_info.get('ProductUserVisibleVersion')
-        build_number = version_info.get('ProductBuildVersion')
+        if not os.path.exists(installesd_dmg):
+            fail('%s doesn\'t exist!' % installesd_dmg)
 
     else:
         fail('Unknown/unsupported source: %s' % source)
+        
+    # get some needed info from the disk image
+    print 'Verifying source...'
+    mountpoints, unused_shadowpath = mountdmg(installesd_dmg)
+    if not mountpoints:
+        fail('Could not mount diskimage %s' % installesd_dmg)
+    mountpoint = mountpoints[0]
+    osinstall_mpkg = os.path.join(mountpoint, 'Packages/OSInstall.mpkg')
+    if not os.path.exists(osinstall_mpkg):
+        unmountdmg(mountpoint)
+        fail('Missing OSInstall.mpkg in %s'% source)
+        
+    expanded_osinstall_mpkg = expandOSInstallMpkg(osinstall_mpkg)
+    distfile = os.path.join(expanded_osinstall_mpkg, 'Distribution')
+    system_version_plist = os.path.join(
+        mountpoint, 'System/Library/CoreServices/SystemVersion.plist')
+    try:
+        version_info = plistlib.readPlist(system_version_plist)
+    except (ExpatError, IOError), err:
+        unmountdmg(mountpoint)
+        fail('Could not read %s: %s' % (system_version_plist, err))
+    unmountdmg(mountpoint)
+    os_version = version_info.get('ProductUserVisibleVersion')
+    build_number = version_info.get('ProductBuildVersion')
+    if os_version is None or build_number is None:
+        fail('Missing OS version or build info in %s' % system_version_plist)
 
     # Things we have now that we need:
     # installesd_dmg: path to the InstallESD.dmg file
