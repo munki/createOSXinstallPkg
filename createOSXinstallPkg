@@ -786,7 +786,11 @@ def main():
     print '----------------------------------------------------------------'
 
     # Figure out where we will be writing this...
-    pkgname = 'InstallOSX_%s_%s.pkg' % (os_version, build_number)
+    custom_tag = ''
+    additional_packages = options.packages or plist_options.get('Packages')
+    if additional_packages:
+        custom_tag = '_custom'
+    pkgname = 'InstallOSX_%s_%s%s.pkg' % (os_version, build_number, custom_tag)
     output_pkg_path = os.path.abspath(os.path.join('.', pkgname))
 
     output = options.output or plist_options.get('Output')
@@ -809,19 +813,18 @@ def main():
     # now we have an output path
     print 'Output package path: %s' % output_pkg_path
 
-    packages = options.packages or plist_options.get('Packages')
-    if packages:
+    if additional_packages:
         # make sure they all exist and look like packages
         print 'Additional packages:'
         print '----------------------------------------------------------------'
-        for pkg in packages:
+        for pkg in additional_packages:
             if (not pkg.endswith('.pkg') and not pkg.endswith('.mpkg')):
                 fail('%s doesn\'t look like a package!' % pkg)
             if not os.path.exists(pkg):
                 fail('Package %s not found!' % pkg)
             print os.path.basename(pkg)
         print '----------------------------------------------------------------'
-        total_package_size = get_size_of_all_packages(packages)
+        total_package_size = get_size_of_all_packages(additional_packages)
         print 'Total additional package size: %s Kbytes' % total_package_size
         print '----------------------------------------------------------------'
         # make sure we have enough space on DMG
@@ -860,10 +863,10 @@ def main():
     print 'Copying InstallESD into package...'
     output_dmg_path = os.path.join(output_pkg_path, 
                                    'Contents/Resources/InstallESD.dmg')
-    if packages:
+    if additional_packages:
         try:
             addPackagesToInstallESD(
-                installesd_dmg, packages, output_dmg_path)
+                installesd_dmg, additional_packages, output_dmg_path)
         except AddPackageError, err:
             cleanupPackage(output_pkg_path)
             fail(err)
