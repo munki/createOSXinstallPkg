@@ -788,12 +788,12 @@ def main():
     # Figure out where we will be writing this...
     custom_tag = ''
     additional_packages = options.packages or plist_options.get('Packages')
-    # get rid of trailing slashes which often result from dragging
-    # and dropping from the Finder into the Terminal
-    additional_packages = [item.rstrip('/') for item in additional_packages]
     
     if additional_packages:
         custom_tag = '_custom'
+        # get rid of trailing slashes which often result from dragging
+        # and dropping from the Finder into the Terminal
+        additional_packages = [item.rstrip('/') for item in additional_packages]
     pkgname = 'InstallOSX_%s_%s%s.pkg' % (os_version, build_number, custom_tag)
     output_pkg_path = os.path.abspath(os.path.join('.', pkgname))
 
