@@ -20,6 +20,7 @@ InstallLion.pkg postflight script
 
 Created 01 Sep 2011 by Greg Neagle
 Updated July 2012 for Mountain Lion and FileVault-protected volumes
+Updated December 2012 for other CoreStorage volumes (like Fusion disks)
 
 Sets up a Lion/Mountain Lion install. 
 This is intended to be run as a package postflight script.'''
@@ -143,15 +144,85 @@ def getVolumeInfo(disk_id):
         return None
 
 
-def getFileVaultStatus(volumepath):
-    '''Returns one of: 'Unknown', 'Not encrypted', 'Encryption pending',
-        'Encrypting', 'Encrypted', 'Decrypting', 'Decrypted' '''
+def findPhysicalVolumeDeviceIdentifiers(volumepath):
+    '''Given the mountpath, deviceid or UUID of a CoreStorage volume,
+    return the deviceids of the physical devices'''
+    try:
+        cs_vol_info = getPlistFromCmd(
+            ['/usr/sbin/diskutil', 'cs', 'info', '-plist', volumepath])
+    except CmdError:
+        # diskutil cs info returns error if volume is not CoreStorage
+        return []
+    logical_volume_group_uuid = cs_vol_info[
+                                    'MemberOfCoreStorageLogicalVolumeGroup']
+    try:
+        cs_list = getPlistFromCmd(
+            ['/usr/sbin/diskutil', 'cs', 'list', '-plist'])
+    except CmdError:
+        # diskutil cs info returns error if not CoreStorage volumes
+        return []
+    
+    for volume_group in cs_list.get('CoreStorageLogicalVolumeGroups', []):
+        if volume_group.get('CoreStorageUUID') == logical_volume_group_uuid:
+            physical_volume_uuids = [item['CoreStorageUUID'] for item in
+                            volume_group.get('CoreStoragePhysicalVolumes', [])]
+    pv_device_ids = []
+    for pv in physical_volume_uuids:
+        try:
+            vol_info = getPlistFromCmd(
+                ['/usr/sbin/diskutil', 'cs', 'info', '-plist', pv])
+        except CmdError:
+            vol_info = {}
+        pv_device_ids.append(vol_info.get('DeviceIdentifier'))
+    return pv_device_ids
+    
+
+def findEmptyAppleBootPartitionsForCSvolume(volumepath):
+    '''Given the path to a non-bootable CoreStorage volume,
+    find the physical volume device ids that are most likely to
+    be used for the Apple_Boot partitions'''
+    pvs = findPhysicalVolumeDeviceIdentifiers(volumepath)
+    
+    try:
+        all_disk_info = getPlistFromCmd(
+            ['/usr/sbin/diskutil', 'list', '-plist'])
+    except Error:
+        return []
+    # find Apple_Boot partitions
+    apple_boot_identifiers = []
+    disk_partition_info = all_disk_info.get('AllDisksAndPartitions', [])
+    for disk in disk_partition_info:
+        for partition in disk.get('Partitions', []):
+            if partition.get('Content') == 'Apple_Boot':
+                if 'DeviceIdentifier' in partition:
+                    apple_boot_identifiers.append(partition['DeviceIdentifier'])
+    
+    found_apple_boots = []
+    all_disks = all_disk_info.get('AllDisks', [])
+    for index in range(len(all_disks)):
+        if all_disks[index] in pvs:
+            nextone = index + 1
+            previous = index - 1
+            for partition in [nextone, previous]:
+                if partition in range(len(all_disks)):
+                    if (all_disks[partition] in apple_boot_identifiers
+                        and not all_disks[partition] in found_apple_boots):
+                        found_apple_boots.append(all_disks[partition])
+                        break
+                        
+    return found_apple_boots
+
+
+def getCoreStorageStatus(volumepath):
+    '''Returns one of: 'Unknown', 'Not CoreStorage', 'Not encrypted', 
+        'Encryption pending', 'Encrypting', 'Encrypted', 'Decrypting',
+        'Decrypted' '''
     try:
         csinfo_plist = getPlistFromCmd(
             ['/usr/sbin/diskutil', 'cs', 'info', '-plist', volumepath])
     except CmdError:
         # diskutil cs info returns error if volume is not CoreStorage
-        return 'Not encrypted'
+        return 'Not CoreStorage'
     except PlistParseError:
         return 'Unknown'
     conversion_state = csinfo_plist.get(
@@ -338,8 +409,12 @@ def findBootHelperPartitions(target_volume_path):
                     [partition for partition in apple_boot_partitions
                      if partition.startswith(parent_disk)])
     else:
-        fv_state = getFileVaultStatus(target_volume_path)
-        if fv_state == 'Encrypted':
+        cs_state = getCoreStorageStatus(target_volume_path)
+        if cs_state == 'Not CoreStorage':
+            # do nothing with this volume
+            pass
+        elif cs_state in ['Encrypted', 'Not encrypted']:
+            # CoreStorage volume (FileVault, Fusion?)
             vol_UUID = disk_info.get('VolumeUUID')
             if not vol_UUID:
                 print >> sys.stderr, (
@@ -349,8 +424,16 @@ def findBootHelperPartitions(target_volume_path):
                 if getBootPlistRootUUID(device_id) == vol_UUID:
                     helper_partitions.append(device_id)
             if not helper_partitions:
+                helper_partitions = findEmptyAppleBootPartitionsForCSvolume(
+                                                            target_volume_path)
+            if not helper_partitions:
                 print >> sys.stderr, 'Did not find a boot helper partition!'
                 return None
+        else:
+            print >> sys.stderr, (
+                'Unsupported CoreStorage state of %s for: %s' % 
+                                    (cs_state, target_volume_path))
+            return None
             
     return helper_partitions
 
@@ -611,9 +694,9 @@ def cacheBaseSystemData(install_data_path):
 
 
 def setupHelperPartition(mountpoint, install_vol_path, install_data_path):
-    '''If we are installing OS X to a new, empty Apple_RAID volume, the
-    boot helper partition will not be set up for us. We have to do it 
-    ourselves'''
+    '''If we are installing OS X to a new, empty Apple_RAID volume, or a new,
+    empty CoreStorage volume, the boot helper partition will not be set up for
+    us. We have to do it ourselves'''
     print 'Setting up helper partition...'
     boothelperdatapath = os.path.join(install_data_path, 'boot_helper_data')
     if not os.path.exists(boothelperdatapath):
@@ -688,7 +771,7 @@ def setupHelperPartition(mountpoint, install_vol_path, install_data_path):
 
 
 def updateHelperPartitions(install_vol_path, install_data_path):
-    '''Used with a FileVault-encrypted or Apple_RAID boot disk -- 
+    '''Used with a CoreStorage or Apple_RAID boot disk -- 
     updates the Apple_Boot helper partition to use the OS X Installer files'''
     print 'Looking for helper partitions...'
     helper_partitions = findBootHelperPartitions(install_vol_path)
@@ -765,22 +848,22 @@ def main():
     # need this info a few places, so get it now
     installvolinfo = getVolumeInfo(installvolumepath)
     
-    target_volume_is_encrypted_or_raid = False
-    # check the install volume to see if it's encrypted
-    fv_state = getFileVaultStatus(installvolumepath)
-    if fv_state == 'Encrypted':
-        target_volume_is_encrypted_or_raid = True
+    target_volume_is_corestorage_or_raid = False
+    # check the install volume to see if it's CoreStorage
+    cs_state = getCoreStorageStatus(installvolumepath)
+    if cs_state in ['Encrypted', 'Not encrypted']:
+        target_volume_is_corestorage_or_raid = True
         # make sure we can find the Apple_Boot helper partition before
         # we continue
         helper_partitions = findBootHelperPartitions(installvolumepath)
         if not helper_partitions:
             cleanupFromFailAndExit(
                 'Cannot find a Recovery partition set as a boot helper for '
-                'encrypted volume %s. Cannot continue.' % installvolumepath)
-        print ('%s appears to be a FileVault-encrypted volume.' 
+                'CoreStorage volume %s. Cannot continue.' % installvolumepath)
+        print ('%s appears to be a CoreStorage volume.' 
                 % installvolumepath)
-    elif fv_state == 'Not encrypted':
-        target_volume_is_encrypted_or_raid = False
+    elif cs_state == 'Not CoreStorage':
+        target_volume_is_corestorage_or_raid = False
     else:
         # volume is being converted to or from Core Storage
         # we should not install now.
@@ -788,12 +871,12 @@ def main():
             'Cannot install to CoreStorage volume %s in the middle of '
             'conversion. Current state is: %s.\nPlease wait for conversion '
             'to complete, restart, and try again.' 
-            % (installvolumepath, fv_state))
+            % (installvolumepath, cs_state))
     
     # now check if target volume is an Apple_RAID volume
     if 'RAIDSetUUID' in installvolinfo:
         print '%s appears to be an AppleRAID volume.' % installvolumepath
-        target_volume_is_encrypted_or_raid = True
+        target_volume_is_corestorage_or_raid = True
     
     # find our resources
     resources_path = os.path.join(packagepath, "Contents", "Resources")
@@ -875,7 +958,7 @@ def main():
                 'Could not copy InstallESD.dmg to %s: %s' % 
                 (install_data_path, err))
     
-    if not target_volume_is_encrypted_or_raid:
+    if not target_volume_is_corestorage_or_raid:
         # create and write com.apple.Boot.plist file in install_data_path
         print 'Creating com.apple.Boot.plist at %s...' % install_data_path
         createBootPlist(install_data_path)
@@ -920,7 +1003,7 @@ def main():
     label = 'Mac OS X Installer'
     cmd = ['/usr/sbin/bless', '--setBoot', '--folder', folder,
            '--bootefi', bootefi, '--label', label]
-    if not target_volume_is_encrypted_or_raid:
+    if not target_volume_is_corestorage_or_raid:
         options = ['--options', 
                    'config="\%s\com.apple.Boot"' % INSTALL_DATA_DIR_NAME]
         cmd.extend(options)
@@ -931,7 +1014,7 @@ def main():
         cleanupFromFailAndExit(
             'Failed to bless OS X installer for startup: %s' % err)
     
-    if target_volume_is_encrypted_or_raid:
+    if target_volume_is_corestorage_or_raid:
         # more work to do!
         # we need to update the Recovery or Boot OS X partitions
         updateHelperPartitions(installvolumepath, install_data_path)
