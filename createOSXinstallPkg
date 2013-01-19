@@ -693,7 +693,7 @@ def main():
     parser.add_option('--output', '-o', help='Optional. Path for output pkg. '
         'Defaults to current working directory.')
     parser.add_option('--identifier', '--id', 
-        help='Optional. Package idenitifier for the package. Defaults to '
+        help='Optional. Package identifier for the package. Defaults to '
         '"com.googlecode.munki.install(mountain)lion.pkg"')
     parser.add_option('--plist', help='Optional. Path to an XML plist file '
         'containing key/value pairs for Source, Output, Packages, and '
