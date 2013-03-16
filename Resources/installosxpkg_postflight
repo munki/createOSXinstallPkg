@@ -693,7 +693,7 @@ def cacheBaseSystemData(install_data_path):
     return True
 
 
-def setupHelperPartition(mountpoint, install_vol_path, install_data_path):
+def setupHelperPartition(mountpoint, install_data_path):
     '''If we are installing OS X to a new, empty Apple_RAID volume, or a new,
     empty CoreStorage volume, the boot helper partition will not be set up for
     us. We have to do it ourselves'''
@@ -753,26 +753,20 @@ def setupHelperPartition(mountpoint, install_vol_path, install_data_path):
         unused_result = unmountVolume(mountpoint)
         cleanupFromFailAndExit(
             'Could not copy %s: %s' % (efilogindata, err))
-    try:
-        volume_uuid = getVolumeInfo(install_vol_path)['VolumeUUID']
-    except AttributeError:
-        unused_result = unmountVolume(mountpoint)
-        cleanupFromFailAndExit(
-            'Missing VolumeUUID attribute for %s' % install_vol_path)
-    boot_plist = {}
-    boot_plist['Root UUID'] = volume_uuid
-    boot_plist_file = os.path.join(bootpdir, 'com.apple.Boot.plist')
-    try:
-        plistlib.writePlist(boot_plist, boot_plist_file)
-    except (IOError, ExpatError), err:
-        unused_result = unmountVolume(mountpoint)
-        cleanupFromFailAndExit(
-            'Failed when creating com.apple.Boot.plist: %s' % err)
+    # return our RPS directory
+    return RPSdir
 
 
 def updateHelperPartitions(install_vol_path, install_data_path):
     '''Used with a CoreStorage or Apple_RAID boot disk -- 
     updates the Apple_Boot helper partition to use the OS X Installer files'''
+    print 'Getting install volume VolumeUUID...'
+    try:
+        volume_uuid = getVolumeInfo(install_vol_path)['VolumeUUID']
+    except AttributeError:
+        cleanupFromFailAndExit(
+            'Missing VolumeUUID attribute for %s' % install_vol_path)
+
     print 'Looking for helper partitions...'
     helper_partitions = findBootHelperPartitions(install_vol_path)
     if not helper_partitions:
@@ -788,37 +782,24 @@ def updateHelperPartitions(install_vol_path, install_data_path):
         if not RPSdir:
             # perhaps this helper partition has never been set up
             # so do it manually!
-            setupHelperPartition(
-                mountpoint, install_vol_path, install_data_path)
-            RPSdir = os.path.join(mountpoint, 'com.apple.boot.R')
+            RPSdir = setupHelperPartition(mountpoint, install_data_path)
+
         boot_plist_file = os.path.join(
             RPSdir, 
             'Library/Preferences/SystemConfiguration/'
             'com.apple.Boot.plist')
-        if os.path.exists(boot_plist_file):
-            try:
-                boot_plist = plistlib.readPlist(boot_plist_file)
-            except ExpatError:
-                unused_result = unmountVolume(mountpoint)
-                cleanupFromFailAndExit(
-                    'Bad com.apple.Boot.plist at %s' % boot_plist_file)
-            new_boot_plist = {}
-            new_boot_plist['Kernel Flags'] = (
-                'container-dmg=file://localhost/%s/InstallESD.dmg '
-                'root-dmg=file://localhost/BaseSystem.dmg'
-                % ENCODED_INSTALL_DATA_DIR_NAME)
-            try:
-                new_boot_plist['Root UUID'] = boot_plist['Root UUID']
-            except AttributeError:
-                # something has gone horribly wrong
-                cleanupFromFailAndExit(
-                    'com.apple.Boot.plist is missing \'Root UUID\' attribute!')
-            try:
-                plistlib.writePlist(new_boot_plist, boot_plist_file)
-            except (IOError, ExpatError), err:
-                unused_result = unmountVolume(mountpoint)
-                cleanupFromFailAndExit(
-                    'Failed when updating com.apple.Boot.plist: %s' % err)
+        boot_plist = {}
+        boot_plist['Kernel Flags'] = (
+            'container-dmg=file://localhost/%s/InstallESD.dmg '
+            'root-dmg=file://localhost/BaseSystem.dmg'
+            % ENCODED_INSTALL_DATA_DIR_NAME)
+        boot_plist['Root UUID'] = volume_uuid
+        try:
+            plistlib.writePlist(boot_plist, boot_plist_file)
+        except (IOError, ExpatError), err:
+            unused_result = unmountVolume(mountpoint)
+            cleanupFromFailAndExit(
+                'Failed when updating com.apple.Boot.plist: %s' % err)
         # copy kernelcache to helper partition
         kernelcache = os.path.join(install_data_path, 'kernelcache')
         dest_path = os.path.join(RPSdir,
@@ -831,9 +812,10 @@ def updateHelperPartitions(install_vol_path, install_data_path):
             cleanupFromFailAndExit('Failed when copying kernelcache: %s' % err)
         # unmount the helper partition
         unused_result = unmountVolume(mountpoint)
-        # we are done updating the boot helper partitions.
-        # we could remove the kernelcache from the target volume's install data 
-        # now, but we won't bother
+
+    # we are done updating the boot helper partitions.
+    # we could remove the kernelcache from the target volume's install data 
+    # now, but we won't bother
 
 # main
 def main():
