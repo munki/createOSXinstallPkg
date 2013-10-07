@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # encoding: utf-8
 #
-# Copyright 2011 Greg Neagle.
+# Copyright 2011-2013 Greg Neagle.
 #
 # Licensed under the Apache License, Version 2.0 (the 'License');
 # you may not use this file except in compliance with the License.
@@ -16,13 +16,14 @@
 # limitations under the License.
 
 '''
-InstallLion.pkg postflight script
+createOSXinstallPkg postflight script
 
 Created 01 Sep 2011 by Greg Neagle
 Updated July 2012 for Mountain Lion and FileVault-protected volumes
 Updated December 2012 for other CoreStorage volumes (like Fusion disks)
+Updated June 2013 for WWDC 2013
 
-Sets up a Lion/Mountain Lion install. 
+Sets up an OS X install. 
 This is intended to be run as a package postflight script.'''
 
 import datetime
@@ -37,7 +38,7 @@ import urllib2
 from xml.parsers.expat import ExpatError
 
 
-INSTALL_DATA_DIR_NAME = 'Mac OS X Install Data'
+INSTALL_DATA_DIR_NAME = 'OS X Install Data'
 ENCODED_INSTALL_DATA_DIR_NAME = urllib2.quote(INSTALL_DATA_DIR_NAME)
 
 
@@ -621,6 +622,7 @@ def create_osinstallattr_plist(installvolinfo, install_data_path):
     attr['OSIAutomationFile'] = (
         '/Volumes/%s/%s/minstallconfig.xml'
         % (installvolinfo['VolumeName'], INSTALL_DATA_DIR_NAME))
+    attr['OSSourceDiskUUID'] = installvolinfo['VolumeUUID']
     try:
         attr_path = os.path.join(install_data_path, 'OSInstallAttr.plist')
         plistlib.writePlist(attr, attr_path)
@@ -897,21 +899,40 @@ def main():
     # copy kernelcache and boot.efi from root of dmg
     # to install_data_path
     kernelcache = os.path.join(mountpoint, 'kernelcache')
-    if not os.path.exists(kernelcache):
-        unmountdmg(mountpoint)
-        cleanupFromFailAndExit('kernelcache missing from InstallESD.dmg')
     bootefi = os.path.join(mountpoint, 'boot.efi')
-    if not os.path.exists(kernelcache):
-        unmountdmg(mountpoint)
-        cleanupFromFailAndExit('boot.efi missing from InstallESD.dmg')
-    try:
-        print 'Copying kernelcache and boot.efi to %s...' % install_data_path
-        shutil.copy(kernelcache, install_data_path)
-        shutil.copy(bootefi, install_data_path)
-    except IOError, err:
-        unmountdmg(mountpoint)
-        cleanupFromFailAndExit('Could not copy needed resources: %s' % err)
-
+    if os.path.exists(kernelcache) and os.path.exists(bootefi):
+        try:
+            print ('Copying kernelcache and boot.efi to %s...' 
+                    % install_data_path)
+            shutil.copy(kernelcache, install_data_path)
+            shutil.copy(bootefi, install_data_path)
+        except IOError, err:
+            unmountdmg(mountpoint)
+            cleanupFromFailAndExit('Could not copy needed resources: %s' % err)
+    else:
+        # we need to copy from the BaseSystem.dmg
+        basesystem_dmg = os.path.join(mountpoint, 'BaseSystem.dmg')
+        basesystem_mountpoints = mountdmg(basesystem_dmg)
+        if not basesystem_mountpoints:
+            unmountdmg(mountpoint)
+            cleanupFromFailAndExit('Could not mount BaseSystem.dmg')
+        basesystem_mountpoint = basesystem_mountpoints[0]
+        kernelcache = os.path.join(basesystem_mountpoint,
+            'System/Library/Caches/com.apple.kext.caches/Startup/kernelcache')
+        bootefi = os.path.join(basesystem_mountpoint, 
+            'System/Library/CoreServices/boot.efi')
+        try:
+            print ('Copying kernelcache and boot.efi to %s...' 
+                    % install_data_path)
+            shutil.copy(kernelcache, install_data_path)
+            shutil.copy(bootefi, install_data_path)
+        except IOError, err:
+            unmountdmg(basesystem_mountpoint)
+            unmountdmg(mountpoint)
+            cleanupFromFailAndExit('Could not copy needed resources: %s' % err)
+        else:
+            unmountdmg(basesystem_mountpoint)
+        
     # while we have the DMG mounted, let's check to see if the install has been
     # customized with additional packages
     osinstallcollection = os.path.join(mountpoint,
@@ -919,7 +940,7 @@ def main():
     # are we installing additional packages after the OS install?
     custompackages_state = os.path.exists(osinstallcollection)
     print 'Customized OS install found: %s' % custompackages_state
-
+    
     # unmount the InstallESD.dmg
     print 'Unmounting %s...' % install_dmg
     unmountdmg(mountpoint)
