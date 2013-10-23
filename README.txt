@@ -11,9 +11,11 @@ This toolset, which includes:
 
 You may put the toolset anywhere you'd like, but keep the Resources folder and its contents in the same directory as `createOSXinstallPkg`.
 
-You'll also need an installation source for Lion or Mountain Lion: a copy of the "Install Mac OS X Lion.app", "Install OS X Mountain Lion.app", or a copy of the "InstallESD.dmg" contained within one of these applications.
+You'll also need an installation source for Lion, Mountain Lion or Mavericks: a copy of the "Install Mac OS X Lion.app", "Install OS X Mountain Lion.app", "Install OS X Mavericks.app", or a copy of the "InstallESD.dmg" contained within one of these applications.
 
 Finally, and most importantly, you'll need the rights to install Lion or Mountain Lion on the machines you manage. Just because this tool allows you to create an OS X installation package does not mean it is legal for your organization to install it on all your Macs.
+
+(Since Mavericks is free, one assumes you can install it with abandon. However, I am not a lawyer, and this does not constitute advice or a recommendation.)
 
 How to use it
 -------------
@@ -148,4 +150,4 @@ The best approach for additional packages is to add only what is necessary to bo
 Note on installing OS X on FileVault-encrypted volumes
 --------------------------------------------------
 
-Installing Lion or Mountain Lion requires a reboot after the install is set up, but before the actual OS X Installer runs. When installing to a FileVault-encrypted volume, after the initial reboot, the pre-boot unlock screen appears. Someone will have to manually unlock the FileVault-encrypted volume before the actual OS X installation can occur.
+Installing Lion, Mountain Lion, or Mavericks requires a reboot after the install is set up, but before the actual OS X Installer runs. When installing to a FileVault-encrypted volume, after the initial reboot, the pre-boot unlock screen appears. Someone will have to manually unlock the FileVault-encrypted volume before the actual OS X installation can occur. Once the disk is unlocked, installation should proceed normally.
