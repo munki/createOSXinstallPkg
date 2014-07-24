@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # encoding: utf-8
 #
-# Copyright 2011-2013 Greg Neagle.
+# Copyright 2011-2014 Greg Neagle.
 #
 # Licensed under the Apache License, Version 2.0 (the 'License');
 # you may not use this file except in compliance with the License.
@@ -22,8 +22,9 @@ Created 01 Sep 2011 by Greg Neagle
 Updated July 2012 for Mountain Lion and FileVault-protected volumes
 Updated December 2012 for other CoreStorage volumes (like Fusion disks)
 Updated June 2013 for WWDC 2013
+Updated June 2014 for WWDC 2014
 
-Sets up an OS X install. 
+Sets up an OS X install.
 This is intended to be run as a package postflight script.'''
 
 import datetime
@@ -162,7 +163,7 @@ def findPhysicalVolumeDeviceIdentifiers(volumepath):
     except CmdError:
         # diskutil cs info returns error if not CoreStorage volumes
         return []
-    
+
     for volume_group in cs_list.get('CoreStorageLogicalVolumeGroups', []):
         if volume_group.get('CoreStorageUUID') == logical_volume_group_uuid:
             physical_volume_uuids = [item['CoreStorageUUID'] for item in
@@ -176,14 +177,14 @@ def findPhysicalVolumeDeviceIdentifiers(volumepath):
             vol_info = {}
         pv_device_ids.append(vol_info.get('DeviceIdentifier'))
     return pv_device_ids
-    
+
 
 def findEmptyAppleBootPartitionsForCSvolume(volumepath):
     '''Given the path to a non-bootable CoreStorage volume,
     find the physical volume device ids that are most likely to
     be used for the Apple_Boot partitions'''
     pvs = findPhysicalVolumeDeviceIdentifiers(volumepath)
-    
+
     try:
         all_disk_info = getPlistFromCmd(
             ['/usr/sbin/diskutil', 'list', '-plist'])
@@ -197,7 +198,7 @@ def findEmptyAppleBootPartitionsForCSvolume(volumepath):
             if partition.get('Content') == 'Apple_Boot':
                 if 'DeviceIdentifier' in partition:
                     apple_boot_identifiers.append(partition['DeviceIdentifier'])
-    
+
     found_apple_boots = []
     all_disks = all_disk_info.get('AllDisks', [])
     for index in range(len(all_disks)):
@@ -210,12 +211,12 @@ def findEmptyAppleBootPartitionsForCSvolume(volumepath):
                         and not all_disks[partition] in found_apple_boots):
                         found_apple_boots.append(all_disks[partition])
                         break
-                        
+
     return found_apple_boots
 
 
 def getCoreStorageStatus(volumepath):
-    '''Returns one of: 'Unknown', 'Not CoreStorage', 'Not encrypted', 
+    '''Returns one of: 'Unknown', 'Not CoreStorage', 'Not encrypted',
         'Encryption pending', 'Encrypting', 'Encrypted', 'Decrypting',
         'Decrypted' '''
     try:
@@ -274,7 +275,7 @@ def getAppleBootPartitions():
 
 
 def getRPSdir(mountpoint):
-    '''Returns the correct com.apple.Boot.X directory from the 
+    '''Returns the correct com.apple.Boot.X directory from the
     helper partition'''
     #
     # for boot != root, boot info is stored in the Apple_Boot partition
@@ -283,7 +284,7 @@ def getRPSdir(mountpoint):
     # These are the "Rock, Paper, Scissors" directories
     # See "FindRPSDir" in http://opensource.apple.com/source/
     #                          kext_tools/kext_tools-117.4/update_boot.c
-    #                         
+    #
     Rdir = os.path.join(mountpoint, 'com.apple.boot.R')
     Pdir = os.path.join(mountpoint, 'com.apple.boot.P')
     Sdir = os.path.join(mountpoint, 'com.apple.boot.S')
@@ -291,7 +292,7 @@ def getRPSdir(mountpoint):
     haveP = os.path.exists(Pdir)
     haveS = os.path.exists(Sdir)
     RPSdir = None
-    # handle all permutations: 3 dirs, any 2 dirs, any 1 dir
+    # handle all permutations: 3 dirs, any 2 dirs, any 1 dir, no dir
     if haveR and haveP and haveS:
         # Apple code picks R
         RPSdir = Rdir
@@ -310,6 +311,14 @@ def getRPSdir(mountpoint):
         RPSdir = Pdir
     elif haveS:
         RPSdir = Sdir
+    else:
+        RPSdir = Rdir
+        try:
+            os.makedirs(RPSdir)
+        except OSError, err:
+            unused_result = unmountVolume(mountpoint)
+            cleanupFromFailAndExit('Could not create com.apple.boot directory '
+                'on helper partition: %s' % err)
     return RPSdir
 
 
@@ -368,7 +377,7 @@ def getBootPlistRootUUID(deviceIdentifier):
         RPSdir = getRPSdir(mountpoint)
         if RPSdir:
             boot_plist_file = os.path.join(
-                RPSdir, 
+                RPSdir,
                 'Library/Preferences/SystemConfiguration/'
                 'com.apple.Boot.plist')
             if os.path.exists(boot_plist_file):
@@ -381,15 +390,25 @@ def getBootPlistRootUUID(deviceIdentifier):
             else:
                 print 'No plist at %s' % boot_plist_file
         else:
-            print 'Apple_Boot partition %s debug info: %s' % (deviceIdentifier, 
+            print 'Apple_Boot partition %s debug info: %s' % (deviceIdentifier,
                                                          os.listdir(mountpoint))
         unused_result = unmountVolume(mountpoint)
     return result
 
 
 def findBootHelperPartitions(target_volume_path):
-    '''Attempts to find the Apple_Boot partition that acts as the boot helper 
-    partition for the target_volume_path'''
+    '''Attempts to find the Apple_Boot partitions that act as the boot helper
+    partitions for the target_volume_path. See:
+    http://www.opensource.apple.com/source/kext_tools/kext_tools-268.7/TESTME'''
+    cmd = ['/usr/sbin/bless', '--plist', '--info', target_volume_path]
+    bless_info = getPlistFromCmd(cmd)
+    if 'Auxiliary Partitions' in bless_info:
+        return bless_info['Auxiliary Partitions']
+
+    # fall back to our other way; this might happen if the target volume is
+    # not currently bootable
+    print ("No Auxiliary Partitions from bless --info; "
+           "searching all available volumes...")
     helper_partitions = []
     apple_boot_partitions = getAppleBootPartitions()
     disk_info = getVolumeInfo(target_volume_path)
@@ -397,7 +416,7 @@ def findBootHelperPartitions(target_volume_path):
         print >> sys.stderr, (
             'Could not get disk info for %s' % target_volume_path)
         return None
-    
+
     # check if target volume is an Apple_RAID volume
     if 'RAIDSetUUID' in disk_info:
         # volume appears to be an AppleRAID volume.
@@ -432,10 +451,10 @@ def findBootHelperPartitions(target_volume_path):
                 return None
         else:
             print >> sys.stderr, (
-                'Unsupported CoreStorage state of %s for: %s' % 
+                'Unsupported CoreStorage state of %s for: %s' %
                                     (cs_state, target_volume_path))
             return None
-            
+
     return helper_partitions
 
 
@@ -444,19 +463,19 @@ def createBootPlist(install_data_path):
     # Example com.apple.Boot.plist:
     #
     # <?xml version="1.0" encoding="UTF-8"?>
-    # <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" 
+    # <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
     # "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
     # <plist version="1.0">
     # <dict>
     #     <key>Kernel Cache</key>
-    #     <string>/Mac OS X Install Data/kernelcache</string>
+    #     <string>/OS X Install Data/kernelcache</string>
     #     <key>Kernel Flags</key>
     #     <string>
-    #       container-dmg=file:///Mac%20OS%20X%20Install%20Data/InstallESD.dmg 
+    #       container-dmg=file:///Mac%20OS%20X%20Install%20Data/InstallESD.dmg
     #       root-dmg=file:///BaseSystem.dmg</string>
     # </dict>
     # </plist>
-    
+
     boot_pl = {}
     boot_pl['Kernel Cache'] = '/%s/kernelcache' % INSTALL_DATA_DIR_NAME
     boot_pl['Kernel Flags'] = (
@@ -474,7 +493,7 @@ def createBootPlist(install_data_path):
 def create_minstallconfig(resources_path, installvolumepath,
     installvolinfo, language='en', custompackages=False):
     '''Creates and writes our automated installation file'''
-    
+
     # Example minstallconfig.xml:
     #
     # <?xml version="1.0" encoding="UTF-8"?>
@@ -498,31 +517,31 @@ def create_minstallconfig(resources_path, installvolumepath,
     #    <string>8217958C-4471-3E5F-B63D-2FFB04953F50</string>
     # </dict>
     # </plist>
-    
+
     install_data_path = os.path.join(installvolumepath, INSTALL_DATA_DIR_NAME)
-    
+
     config = {'InstallType': 'automated',
               'Language':    language}
-    
+
     # do we have a choiceChanges file?
     choiceChangesFile = os.path.join(
-        resources_path, INSTALL_DATA_DIR_NAME, 
+        resources_path, INSTALL_DATA_DIR_NAME,
         'MacOSXInstaller.choiceChanges')
     if os.path.exists(choiceChangesFile):
         shutil.copy(choiceChangesFile, install_data_path)
         config['ChoiceChanges'] = 'MacOSXInstaller.choiceChanges'
-        
+
     if custompackages:
         pkgpath = '/System/Installation/Packages/OSInstall.collection'
     else:
         pkgpath = '/System/Installation/Packages/OSInstall.mpkg'
     config['Package'] = pkgpath
-    
+
     # add install volume info
     config['Target'] = installvolumepath
     config['TargetName'] = installvolinfo['VolumeName']
     config['TargetUUID'] = installvolinfo['VolumeUUID']
-    
+
     # now write it out
     minstallconfig_path = os.path.join(install_data_path, 'minstallconfig.xml')
     try:
@@ -537,11 +556,11 @@ def create_index_sproduct(resources_path, install_data_path):
     it lists.'''
     # index.sproduct contains a list of additional signed (and therefore _flat_)
     # packages to install. Install Mac OS X Lion.app downloads these before
-    # setting up the Lion install. They do not seem to be vital to the install. 
+    # setting up the Lion install. They do not seem to be vital to the install.
     # Example index.sproduct file:
     #
     # <?xml version="1.0" encoding="UTF-8"?>
-    # <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" 
+    # <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
     #  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
     # <plist version="1.0">
     # <dict>
@@ -594,30 +613,30 @@ def create_index_sproduct(resources_path, install_data_path):
 
 def create_osinstallattr_plist(installvolinfo, install_data_path):
     '''Creates the OSInstallAttr.plist file'''
-    # Lion installer consults OSInstallAttr.plist to make sure it hasn't been 
-    # too long since the Lion install environment was created; it skips the 
+    # Lion installer consults OSInstallAttr.plist to make sure it hasn't been
+    # too long since the Lion install environment was created; it skips the
     # automation file if it deems it "too old".
     # This file also provides the path to the install automation file.
     # Example OSInstallAttr.plist:
     #
     # <?xml version="1.0" encoding="UTF-8"?>
-    # <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" 
+    # <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
     #  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
     # <plist version="1.0">
     # <dict>
     #    <key>IAEndDate</key>
     #    <date>2011-08-31T21:09:49Z</date>
     #    <key>IALogFile</key>
-    #    <string>/Volumes/foo/Mac OS X Install Data/ia.log</string>
+    #    <string>/Volumes/foo/OS X Install Data/ia.log</string>
     #    <key>OSIAutomationFile</key>
-    #    <string>/Volumes/foo/Mac OS X Install Data/minstallconfig.xml</string>
+    #    <string>/Volumes/foo/OS X Install Data/minstallconfig.xml</string>
     # </dict>
     # </plist>
     #
     now = datetime.datetime.utcnow()
     attr = {}
     attr['IAEndDate'] = now
-    attr['IALogFile'] = ('/Volumes/%s/%s/ia.log' 
+    attr['IALogFile'] = ('/Volumes/%s/%s/ia.log'
                         % (installvolinfo['VolumeName'], INSTALL_DATA_DIR_NAME))
     attr['OSIAutomationFile'] = (
         '/Volumes/%s/%s/minstallconfig.xml'
@@ -640,7 +659,7 @@ def cacheBaseSystemData(install_data_path):
     if not mountpoints:
         print >> sys.stderr, 'Nothing mounted from InstallESD.dmg'
         return False
-        
+
     installesd_mountpoint = mountpoints[0]
     base_dmg = os.path.join(installesd_mountpoint, 'BaseSystem.dmg')
     print 'Mounting %s...' % base_dmg
@@ -649,7 +668,7 @@ def cacheBaseSystemData(install_data_path):
         unmountdmg(installesd_mountpoint)
         print >> sys.stderr, 'Nothing mounted from BaseSystem.dmg'
         return False
-        
+
     basedmg_mountpoint = mountpoints[0]
     # we need:
     # System/Library/CoreServices/PlatformSupport.plist
@@ -658,6 +677,16 @@ def cacheBaseSystemData(install_data_path):
     #
     # usr/standalone/i386/EfiLoginUI
     boothelperdatapath = os.path.join(install_data_path, 'boot_helper_data')
+    if os.path.exists(boothelperdatapath):
+        try:
+            shutil.rmtree(boothelperdatapath)
+        except OSError, err:
+            unmountdmg(basedmg_mountpoint)
+            unmountdmg(installesd_mountpoint)
+            print >> sys.stderr, (
+                'Could not remove pre-existing %s: %s'
+                % (boothelperdatapath, err))
+            return False
     if not os.path.exists(boothelperdatapath):
         try:
             os.mkdir(boothelperdatapath)
@@ -676,6 +705,7 @@ def cacheBaseSystemData(install_data_path):
         basedmg_mountpoint, 'usr/standalone/i386/EfiLoginUI')
     for item in [platform_support_plist, system_version_plist, efilogindata]:
         try:
+            print 'Copying %s to %s...' % (item, boothelperdatapath)
             if os.path.isdir(item):
                 destination = os.path.join(
                     boothelperdatapath, os.path.basename(item))
@@ -688,7 +718,7 @@ def cacheBaseSystemData(install_data_path):
             print >> sys.stderr, (
                 'Error copying %s to %s: %s' % (item, boothelperdatapath, err))
             return False
-            
+
     #clean up and return True for success
     unmountdmg(basedmg_mountpoint)
     unmountdmg(installesd_mountpoint)
@@ -701,13 +731,12 @@ def setupHelperPartition(mountpoint, install_data_path):
     us. We have to do it ourselves'''
     print 'Setting up helper partition...'
     boothelperdatapath = os.path.join(install_data_path, 'boot_helper_data')
-    if not os.path.exists(boothelperdatapath):
-        success = cacheBaseSystemData(install_data_path)
-        if not success:
-            unused_result = unmountVolume(mountpoint)
-            cleanupFromFailAndExit(
-                'Could not cache data from BaseSystem.dmg')
-            
+    success = cacheBaseSystemData(install_data_path)
+    if not success:
+        unused_result = unmountVolume(mountpoint)
+        cleanupFromFailAndExit(
+            'Could not cache data from BaseSystem.dmg')
+
     helper_root = os.path.join(mountpoint, 'System/Library/CoreServices')
     if not os.path.exists(helper_root):
         try:
@@ -731,13 +760,11 @@ def setupHelperPartition(mountpoint, install_data_path):
             cleanupFromFailAndExit(
                 'Error copying %s to %s: %s' % (item, helper_root, err))
 
-    RPSdir = os.path.join(mountpoint, 'com.apple.boot.R')
-    usrstandalonedir = os.path.join(
-        RPSdir, 'usr/standalone/i386')
+    RPSdir = getRPSdir(mountpoint)
+    usrstandalonedir = os.path.join(RPSdir, 'usr/standalone/i386')
     kernelcachedir = os.path.join(
         RPSdir, 'System/Library/Caches/com.apple.kext.caches/Startup')
-    bootpdir = os.path.join(
-        RPSdir, 'Library/Preferences/SystemConfiguration')
+    bootpdir = os.path.join(RPSdir, 'Library/Preferences/SystemConfiguration')
     for directory in [usrstandalonedir, kernelcachedir, bootpdir]:
         if not os.path.exists(directory):
             try:
@@ -748,20 +775,28 @@ def setupHelperPartition(mountpoint, install_data_path):
                     'Could not create %s: %s' % (directory, err))
 
     efilogindata = os.path.join(boothelperdatapath, 'EfiLoginUI')
-    try:
-        usrstandaloneefidir = os.path.join(usrstandalonedir, 'EfiLoginUI')
-        shutil.copytree(efilogindata, usrstandaloneefidir)
-    except OSError, err:
-        unused_result = unmountVolume(mountpoint)
-        cleanupFromFailAndExit(
-            'Could not copy %s: %s' % (efilogindata, err))
+    usrstandaloneefidir = os.path.join(usrstandalonedir, 'EfiLoginUI')
+    if os.path.exists(usrstandaloneefidir):
+        try:
+            shutil.rmtree(usrstandaloneefidir)
+        except OSError, err:
+            unused_result = unmountVolume(mountpoint)
+            cleanupFromFailAndExit(
+                'Could not remove existing %s: %s' % (usrstandaloneefidir, err))
+    if os.path.exists(efilogindata):
+        try:
+            shutil.copytree(efilogindata, usrstandaloneefidir)
+        except OSError, err:
+            unused_result = unmountVolume(mountpoint)
+            cleanupFromFailAndExit(
+                'Could not copy %s: %s' % (efilogindata, err))
     # return our RPS directory
     return RPSdir
 
 
 def updateHelperPartitions(install_vol_path, install_data_path):
-    '''Used with a CoreStorage or Apple_RAID boot disk -- 
-    updates the Apple_Boot helper partition to use the OS X Installer files'''
+    '''Used with a CoreStorage or Apple_RAID boot disk -- updates
+    the Apple_Boot helper partition(s) to use the OS X Installer files'''
     print 'Getting install volume VolumeUUID...'
     try:
         volume_uuid = getVolumeInfo(install_vol_path)['VolumeUUID']
@@ -779,15 +814,9 @@ def updateHelperPartitions(install_vol_path, install_data_path):
     for helper_partition in helper_partitions:
         print 'Mounting %s to update helper partition' % helper_partition
         mountpoint = mountHelperPartitionHidden(helper_partition)
-        # update com.apple.Boot.plist
-        RPSdir = getRPSdir(mountpoint)
-        if not RPSdir:
-            # perhaps this helper partition has never been set up
-            # so do it manually!
-            RPSdir = setupHelperPartition(mountpoint, install_data_path)
-
+        RPSdir = setupHelperPartition(mountpoint, install_data_path)
         boot_plist_file = os.path.join(
-            RPSdir, 
+            RPSdir,
             'Library/Preferences/SystemConfiguration/'
             'com.apple.Boot.plist')
         boot_plist = {}
@@ -812,11 +841,12 @@ def updateHelperPartitions(install_vol_path, install_data_path):
         except IOError, err:
             unused_result = unmountVolume(mountpoint)
             cleanupFromFailAndExit('Failed when copying kernelcache: %s' % err)
+
         # unmount the helper partition
         unused_result = unmountVolume(mountpoint)
 
     # we are done updating the boot helper partitions.
-    # we could remove the kernelcache from the target volume's install data 
+    # we could remove the kernelcache from the target volume's install data
     # now, but we won't bother
 
 # main
@@ -828,10 +858,10 @@ def main():
         installvolumepath = sys.argv[3]
     except IndexError:
         cleanupFromFailAndExit('Missing runtime parameters from installer.')
-        
+
     # need this info a few places, so get it now
     installvolinfo = getVolumeInfo(installvolumepath)
-    
+
     target_volume_is_corestorage_or_raid = False
     # check the install volume to see if it's CoreStorage
     cs_state = getCoreStorageStatus(installvolumepath)
@@ -844,7 +874,7 @@ def main():
             cleanupFromFailAndExit(
                 'Cannot find a Recovery partition set as a boot helper for '
                 'CoreStorage volume %s. Cannot continue.' % installvolumepath)
-        print ('%s appears to be a CoreStorage volume.' 
+        print ('%s appears to be a CoreStorage volume.'
                 % installvolumepath)
     elif cs_state == 'Not CoreStorage':
         target_volume_is_corestorage_or_raid = False
@@ -854,27 +884,27 @@ def main():
         cleanupFromFailAndExit(
             'Cannot install to CoreStorage volume %s in the middle of '
             'conversion. Current state is: %s.\nPlease wait for conversion '
-            'to complete, restart, and try again.' 
+            'to complete, restart, and try again.'
             % (installvolumepath, cs_state))
-    
+
     # now check if target volume is an Apple_RAID volume
     if 'RAIDSetUUID' in installvolinfo:
         print '%s appears to be an AppleRAID volume.' % installvolumepath
         target_volume_is_corestorage_or_raid = True
-    
+
     # find our resources
     resources_path = os.path.join(packagepath, "Contents", "Resources")
     install_dmg = os.path.join(resources_path, 'InstallESD.dmg')
     if not os.path.exists(install_dmg):
-        # look in Resources/Mac OS X Install Data/ in case the
+        # look in Resources/OS X Install Data/ in case the
         # admin put it there
         install_dmg = os.path.join(
             resources_path, INSTALL_DATA_DIR_NAME, 'InstallESD.dmg')
         if not os.path.exists(install_dmg):
             cleanupFromFailAndExit(
                 'Missing InstallESD.dmg in package resources.')
-                
-    # prep volume for install. Create a directory for the install data on the 
+
+    # prep volume for install. Create a directory for the install data on the
     # target volume.
     install_data_path = os.path.join(installvolumepath, INSTALL_DATA_DIR_NAME)
     if os.path.exists(install_data_path):
@@ -888,21 +918,21 @@ def main():
             msg = ('Could not create \'%s\' directory on %s:\n%s'
                    % (INSTALL_DATA_DIR_NAME, installvolumepath, err))
             cleanupFromFailAndExit(msg)
-    
+
     # mount the InstallESD.dmg
     print 'Mounting %s...' % install_dmg
     mountpoints = mountdmg(install_dmg)
     if not mountpoints:
         cleanupFromFailAndExit('Nothing mounted from InstallESD.dmg')
     mountpoint = mountpoints[0]
-    
+
     # copy kernelcache and boot.efi from root of dmg
     # to install_data_path
     kernelcache = os.path.join(mountpoint, 'kernelcache')
     bootefi = os.path.join(mountpoint, 'boot.efi')
     if os.path.exists(kernelcache) and os.path.exists(bootefi):
         try:
-            print ('Copying kernelcache and boot.efi to %s...' 
+            print ('Copying kernelcache and boot.efi to %s...'
                     % install_data_path)
             shutil.copy(kernelcache, install_data_path)
             shutil.copy(bootefi, install_data_path)
@@ -919,10 +949,10 @@ def main():
         basesystem_mountpoint = basesystem_mountpoints[0]
         kernelcache = os.path.join(basesystem_mountpoint,
             'System/Library/Caches/com.apple.kext.caches/Startup/kernelcache')
-        bootefi = os.path.join(basesystem_mountpoint, 
+        bootefi = os.path.join(basesystem_mountpoint,
             'System/Library/CoreServices/boot.efi')
         try:
-            print ('Copying kernelcache and boot.efi to %s...' 
+            print ('Copying kernelcache and boot.efi to %s...'
                     % install_data_path)
             shutil.copy(kernelcache, install_data_path)
             shutil.copy(bootefi, install_data_path)
@@ -932,7 +962,7 @@ def main():
             cleanupFromFailAndExit('Could not copy needed resources: %s' % err)
         else:
             unmountdmg(basesystem_mountpoint)
-        
+
     # while we have the DMG mounted, let's check to see if the install has been
     # customized with additional packages
     osinstallcollection = os.path.join(mountpoint,
@@ -940,7 +970,7 @@ def main():
     # are we installing additional packages after the OS install?
     custompackages_state = os.path.exists(osinstallcollection)
     print 'Customized OS install found: %s' % custompackages_state
-    
+
     # unmount the InstallESD.dmg
     print 'Unmounting %s...' % install_dmg
     unmountdmg(mountpoint)
@@ -953,14 +983,14 @@ def main():
     except OSError:
         # couldn't link, so try to copy
         try:
-            print ('Link not possible. Copying %s to %s...' 
+            print ('Link not possible. Copying %s to %s...'
                     % (install_dmg, dest_path))
             shutil.copy(install_dmg, dest_path)
         except OSError, err:
             cleanupFromFailAndExit(
-                'Could not copy InstallESD.dmg to %s: %s' % 
+                'Could not copy InstallESD.dmg to %s: %s' %
                 (install_data_path, err))
-    
+
     if not target_volume_is_corestorage_or_raid:
         # create and write com.apple.Boot.plist file in install_data_path
         print 'Creating com.apple.Boot.plist at %s...' % install_data_path
@@ -976,14 +1006,14 @@ def main():
         installvolinfo, language='en', custompackages=custompackages_state)
 
     # index.sproduct
-    # this contains a list of additional signed (and therefore _flat_) 
+    # this contains a list of additional signed (and therefore _flat_)
     # packages to install.
     print 'Creating index.sproduct at %s...' % install_data_path
     create_index_sproduct(resources_path, install_data_path)
-        
+
     # OSInstallAttr.plist
-    # Lion installer consults this to make sure it hasn't been too long since
-    # the Lion install environment was created; it skips the automation file if
+    # OS X installer consults this to make sure it hasn't been too long since
+    # the OS X install environment was created; it skips the automation file if
     # it deems it "too old".
     print 'Creating OSInstallAttr.plist at %s...' % install_data_path
     create_osinstallattr_plist(installvolinfo, install_data_path)
@@ -999,15 +1029,15 @@ def main():
         subprocess.check_call(['/usr/sbin/nvram', install_product_url])
     except subprocess.CalledProcessError, err:
         cleanupFromFailAndExit('Couldn\'t set nvram: %s' % err)
-    
+
     # bless our OS X install boot environment
     folder = install_data_path
     bootefi = os.path.join(install_data_path, 'boot.efi')
-    label = 'Mac OS X Installer'
+    label = 'OS X Installer'
     cmd = ['/usr/sbin/bless', '--setBoot', '--folder', folder,
            '--bootefi', bootefi, '--label', label]
     if not target_volume_is_corestorage_or_raid:
-        options = ['--options', 
+        options = ['--options',
                    'config="\%s\com.apple.Boot"' % INSTALL_DATA_DIR_NAME]
         cmd.extend(options)
     print 'Blessing OS X installer boot environment in %s...' % folder
@@ -1016,15 +1046,15 @@ def main():
     except subprocess.CalledProcessError, err:
         cleanupFromFailAndExit(
             'Failed to bless OS X installer for startup: %s' % err)
-    
+
     if target_volume_is_corestorage_or_raid:
         # more work to do!
         # we need to update the Recovery or Boot OS X partitions
         updateHelperPartitions(installvolumepath, install_data_path)
-    
+
     # all that's left now is to restart!
     print 'Setup for OS X install is complete.'
-    print 'Please restart immediately to complete installation of OS X.' 
+    print 'Please restart immediately to complete installation of OS X.'
     exit(0)
 
 if __name__ == '__main__':
