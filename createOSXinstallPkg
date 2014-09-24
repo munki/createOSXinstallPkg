@@ -616,6 +616,27 @@ class AddPackageError(Exception):
     pass
 
 
+def copyExtraPkgs(additional_packages, destpath):
+    '''Copies extra packages to a Packages directory in the package
+    we're building. Works around a bug in the Yosemite installer'''
+    if not os.path.exists(destpath):
+        try:
+            os.makedirs(destpath)
+        except OSError, err:
+            raise AddPackageError('Could not create destination directory.')
+    try:
+        for pkg in additional_packages:
+            if os.path.isdir(pkg):
+                destination = os.path.join(destpath, os.path.basename(pkg))
+                print '    Copying bundle package %s' % pkg
+                shutil.copytree(pkg, destination)
+            else:
+                print '    Copying flat package %s' % pkg
+                shutil.copy(pkg, destpath)
+    except IOError, err:
+        raise AddPackageError('Error %s copying packages to Packages dir' % err)
+
+
 def addPackagesToInstallESD(installesd_dmg, packages,
                             output_dmg_path, create_minstallconfig=False):
     '''Adds additional packages to the InstallESD.dmg and creates an
@@ -892,6 +913,7 @@ def main():
                 fail('Package %s not found!' % pkg)
             print os.path.basename(pkg)
         print '----------------------------------------------------------------'
+    if additional_packages and not os_version.startswith('10.10'):
         total_package_size = get_size_of_all_packages(additional_packages)
         print 'Total additional package size: %s Kbytes' % total_package_size
         print '----------------------------------------------------------------'
@@ -927,6 +949,18 @@ def main():
         destpath = os.path.join(output_pkg_path,
                                 'Contents/Resources/OS X Install Data')
         getPkgAndMakeIndexSproduct(destpath, os_vers=os_version)
+
+        if additional_packages and os_version.startswith('10.10'):
+            print '-' * 67
+            print 'Copying extra packages into main package...'
+            destpath = os.path.join(output_pkg_path,
+                                    'Contents/Resources/Packages')
+            try:
+                copyExtraPkgs(additional_packages, destpath)
+            except AddPackageError, err:
+                cleanupOutput(output_path)
+                fail(err)
+            additional_packages = []
 
         print '----------------------------------------------------------------'
         print 'Copying InstallESD into package...'
