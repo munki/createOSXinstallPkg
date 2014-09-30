@@ -74,16 +74,16 @@ The postflight script performs the actions that the GUI "Install Mac OS X Lion" 
 
 Those actions are:
 
-  1. Create a `Mac OS X Install Data` directory at the root of the target volume.
+  1. Create an `OS X Install Data` directory at the root of the target volume.
   2. Mount the `InstallESD.dmg` disk image.
-  3. Copy the `kernelcache` and `boot.efi` files from the disk image to the `Mac OS X Install Data` directory. (The `kernelcache` is copied to the Recovery HD helper partition if the target volume is encrypted with FileVault 2.)
+  3. Copy the `kernelcache` and `boot.efi` files from the disk image to the `OS X Install Data` directory. (The `kernelcache` is copied to the Recovery HD helper partition if the target volume is encrypted with FileVault 2.)
   4. Unmount (eject) the `InstallESD.dmg` disk image.
-  5. If the `InstallLion.pkg` is on the same volume as the target volume, create a hard link to the `InstallESD.dmg` disk image in `Mac OS X Install Data`, otherwise copy the `InstallESD.dmg` disk image to that directory.
+  5. If the `InstallLion.pkg` is on the same volume as the target volume, create a hard link to the `InstallESD.dmg` disk image in `OS X Install Data`, otherwise copy the `InstallESD.dmg` disk image to that directory.
   6. Create a `com.apple.Boot.plist` file in the `Mac OS X Install Data` directory which tells the kernel how to mount the disk image to use for booting. (This file is instead created on the the Recovery HD helper partition if the target volume is encrypted with FileVault 2.)
   7. Create a `minstallconfig.xml` file, which tells the OS X Installer what to install and to which volume to install it. It also provides a path to a `MacOSXInstaller.choiceChanges` file if one has been included in the package.
-  8. Create an `index.sproduct` file and an `OSInstallAttr.plist` in the `Mac OS X Install Data` directory. These are also used by the OS X Installer.
+  8. Create an `index.sproduct` file and an `OSInstallAttr.plist` in the `OS X Install Data` directory. These are also used by the OS X Installer.
   9. Set a variable in nvram that the OS X Installer uses to find the product install info after reboot.
-  10. Use the `bless` command to cause the Mac to boot from the kernel files copied to the `Mac OS X Install Data` directory.
+  10. Use the `bless` command to cause the Mac to boot from the kernel files copied to the `OS X Install Data` directory.
   
 Since most of the work is done with a postflight script, and since that script may need to do a lengthy copy of almost 4GB of data (if the package is not on the target volume), you may see a long delay at the "Running package scripts" stage of installation. This is normal. (Annoyingly, the Installer.app displays "Install time remaining: Less than a minute" for several minutes during this stage.)
 
@@ -105,7 +105,7 @@ The `distribution.dist` declares the install size is 8388608 KB (8* 1024 * 1024 
 
 ####Installer choice changes
 
-You'll find a `MacOSXInstaller.choiceChanges` file at `InstallOSX.pkg/Contents/Resources/Mac OS X Install Data/MacOSXInstaller.choiceChanges`
+You'll find a `MacOSXInstaller.choiceChanges` file at `InstallOSX.pkg/Contents/Resources/OS X Install Data/MacOSXInstaller.choiceChanges`
 
 See `man installer` for more info on ChoiceChangesXML files.
 
