@@ -35,7 +35,7 @@ The `--pkg` option allows you to add one or more packages to be installed after 
 
     sudo ./createOSXinstallPkg --source /path/to/Install\ Mac\ OS\ X\ Lion.app --identifier 'com.example.installosx.pkg'
 
-The `--identifier` option allows you to change the package identifier, which is by default 'com.googlecode.munki.installlion.pkg' or 'com.googlecode.munki.installmountainlion.pkg'
+The `--identifier` option allows you to change the package identifier, which is by default 'com.googlecode.munki.installosx.pkg'.
 
     sudo ./createOSXinstallPkg --plist /path/to/xml.plist
 
