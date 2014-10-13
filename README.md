@@ -1,3 +1,7 @@
+>_Yosemite note_
+
+>If you are testing createOSXinstallPkg with Yosemite, check out this note: https://devforums.apple.com/thread/250380
+
 ###Getting Started
 
 ####What you need
