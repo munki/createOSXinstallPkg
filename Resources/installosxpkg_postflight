@@ -894,7 +894,6 @@ def main():
 
     # find our resources
     resources_path = os.path.join(packagepath, "Contents", "Resources")
-    extra_packages_dir = os.path.join(resources_path, "Packages")
     install_dmg = os.path.join(resources_path, 'InstallESD.dmg')
     if not os.path.exists(install_dmg):
         # look in Resources/OS X Install Data/ in case the
@@ -904,21 +903,6 @@ def main():
         if not os.path.exists(install_dmg):
             cleanupFromFailAndExit(
                 'Missing InstallESD.dmg in package resources.')
-
-    # install any extra packages first
-    if os.path.exists(extra_packages_dir):
-        extra_packages_items = os.listdir(extra_packages_dir)
-        extra_packages = [item for item in extra_packages_items
-                          if os.path.splitext(item)[1] in ['.pkg', '.mpkg']]
-        for pkg in extra_packages:
-            pkg_path = os.path.join(extra_packages_dir, pkg)
-            try:
-                subprocess.check_call(
-                    ['/usr/sbin/installer', '-pkg', pkg_path,
-                    '-target', installvolumepath])
-            except subprocess.CalledProcessError, err:
-                msg = 'Failed to install pkg %s: %s' % (pkg, err)
-                cleanupFromFailAndExit(msg)
 
     # prep volume for install. Create a directory for the install data on the
     # target volume.
