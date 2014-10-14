@@ -74,8 +74,8 @@ def mountdmg(dmgpath, use_shadow=False):
     mountpoints = []
     dmgname = os.path.basename(dmgpath)
     cmd = ['/usr/bin/hdiutil', 'attach', dmgpath,
-                '-mountRandom', TMPDIR, '-nobrowse', '-plist',
-                '-owners', 'on']
+           '-mountRandom', TMPDIR, '-nobrowse', '-plist',
+           '-owners', 'on']
     if use_shadow:
         shadowname = dmgname + '.shadow'
         shadowpath = os.path.join(TMPDIR, shadowname)
@@ -83,7 +83,7 @@ def mountdmg(dmgpath, use_shadow=False):
     else:
         shadowpath = None
     proc = subprocess.Popen(cmd, bufsize=-1,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (pliststr, err) = proc.communicate()
     if proc.returncode:
         print >> sys.stderr, 'Error: "%s" while mounting %s.' % (err, dmgname)
@@ -101,15 +101,15 @@ def unmountdmg(mountpoint):
     Unmounts the dmg at mountpoint
     """
     proc = subprocess.Popen(['/usr/bin/hdiutil', 'detach', mountpoint],
-                                bufsize=-1, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE)
+                            bufsize=-1, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
     (unused_output, err) = proc.communicate()
     if proc.returncode:
         print >> sys.stderr, 'Polite unmount failed: %s' % err
         print >> sys.stderr, 'Attempting to force unmount %s' % mountpoint
         # try forcing the unmount
         retcode = subprocess.call(['/usr/bin/hdiutil', 'detach', mountpoint,
-                                '-force'])
+                                   '-force'])
         if retcode:
             print >> sys.stderr, 'Failed to unmount %s' % mountpoint
 
@@ -124,8 +124,7 @@ def makePkgDirs(pkgpath):
         os.makedirs(os.path.join(pkgpath,
                                  'Contents/Resources/OS X Install Data'))
     except OSError, err:
-        fail('Error creating package directories at %s: %s'
-                              % (pkgpath, err))
+        fail('Error creating package directories at %s: %s' % (pkgpath, err))
 
 
 def makeDescriptionPlist(output_pkg_path, os_version='10.7', build_number=None):
@@ -145,13 +144,12 @@ def makeDescriptionPlist(output_pkg_path, os_version='10.7', build_number=None):
     pkg_description['IFPkgDescriptionDescription'] = description
     pkg_description['IFPkgDescriptionTitle'] = title
     output_file = os.path.join(output_pkg_path,
-        'Contents/Resources/en.lproj/Description.plist')
+                               'Contents/Resources/en.lproj/Description.plist')
     try:
         plistlib.writePlist(pkg_description, output_file)
     except (OSError, ExpatError), err:
         cleanupOutput(output_pkg_path)
-        fail('Error creating file at %s: %s'
-                              % (output_file, err))
+        fail('Error creating file at %s: %s' % (output_file, err))
 
 
 def makeInfoPlist(output_pkg_path, os_version='10.7', build_number=None,
@@ -182,8 +180,7 @@ def makeInfoPlist(output_pkg_path, os_version='10.7', build_number=None,
         plistlib.writePlist(info, output_file)
     except (OSError, ExpatError), err:
         cleanupOutput(output_pkg_path)
-        fail('Error creating file at %s: %s'
-                              % (output_file, err))
+        fail('Error creating file at %s: %s' % (output_file, err))
 
 
 def writefile(stringdata, path):
@@ -200,8 +197,7 @@ def writePkgInfo(output_pkg_path):
         writefile('pkmkrpkg1', output_file)
     except (OSError, IOError), err:
         cleanupOutput(output_pkg_path)
-        fail('Error creating file at %s: %s'
-                              % (output_file, err))
+        fail('Error creating file at %s: %s' % (output_file, err))
 
 
 def write_package_version(output_pkg_path):
@@ -212,8 +208,7 @@ def write_package_version(output_pkg_path):
         writefile('major: 1\nminor: 0', output_file)
     except (OSError, IOError), err:
         cleanupOutput(output_pkg_path)
-        fail('Error creating file at %s: %s'
-                              % (output_file, err))
+        fail('Error creating file at %s: %s' % (output_file, err))
 
 
 def makeArchiveAndBom(output_pkg_path):
@@ -243,24 +238,21 @@ def makeArchiveAndBom(output_pkg_path):
             ['/bin/pax', '-w', '-x', 'cpio', '-f', archiveName, '.'])
     except subprocess.CalledProcessError, err:
         cleanupOutput(output_pkg_path)
-        fail('Can\'t create archive at %s: %s'
-                              % (archiveName, err))
+        fail('Can\'t create archive at %s: %s' % (archiveName, err))
     # change working dir back
     os.chdir(cwd)
     try:
         subprocess.check_call(['/usr/bin/gzip', archiveName])
     except subprocess.CalledProcessError, err:
         cleanupOutput(output_pkg_path)
-        fail('Can\'t gzip archive at %s: %s'
-                              % (archiveName, err))
+        fail('Can\'t gzip archive at %s: %s' % (archiveName, err))
     # now make a BOM file
     bomName = os.path.join(output_pkg_path, 'Contents/Archive.bom')
     try:
         subprocess.check_call(['/usr/bin/mkbom', emptydir, bomName])
     except subprocess.CalledProcessError, err:
         cleanupOutput(output_pkg_path)
-        fail('Can\'t make BOM file at %s: %s'
-                              % (bomName, err))
+        fail('Can\'t make BOM file at %s: %s' % (bomName, err))
     try:
         os.rmdir(emptydir)
     except OSError:
@@ -347,8 +339,9 @@ def make_distribution(output_pkg_path, source_pkg_dist,
     </choice>
     '''
 
-    dist_pkg_ref = '''
-    <pkg-ref id='manual' installKBytes='%s' onConclusion='RequireRestart' version='1.0'/>''' % installKBytes
+    dist_pkg_ref = ("<pkg-ref id='manual' installKBytes='%s' "
+                    "onConclusion='RequireRestart' version='1.0'/>"
+                    % installKBytes)
 
     dist_footer = '\n</installer-script>'
 
@@ -363,8 +356,7 @@ def make_distribution(output_pkg_path, source_pkg_dist,
         writefile(dist, output_file)
     except (OSError, IOError), err:
         cleanupOutput(output_pkg_path)
-        fail('Error creating file at %s: %s'
-                              % (output_file, err))
+        fail('Error creating file at %s: %s' % (output_file, err))
 
 
 def copyLocalizedResources(pkgpath, source_pkg_resources):
@@ -454,7 +446,7 @@ def get_available_free_space_in_dmg(some_dmg):
     (mountpoints, unused_shadowpath) = mountdmg(some_dmg)
     if mountpoints:
         stat = os.statvfs(mountpoints[0])
-        free  = stat.f_bavail * stat.f_frsize
+        free = stat.f_bavail * stat.f_frsize
         unmountdmg(mountpoints[0])
         return int(free/1024)
     else:
@@ -514,7 +506,7 @@ def findIncompatibleAppListPkgURL(catalog_url, package_name):
         for product_key in catalog['Products'].keys():
             product = catalog['Products'][product_key]
             for package in product.get('Packages', []):
-                url = package.get('URL','')
+                url = package.get('URL', '')
                 if url.endswith(package_name):
                     product_list.append({'PostDate': product['PostDate'],
                                          'URL': url})
@@ -542,9 +534,10 @@ def getPkgAndMakeIndexSproduct(destpath, os_vers='10.7'):
                              '.merged-1.sucatalog')
 
     YOSEMITE_PKGNAME = 'OSX_10_10_IncompatibleAppList.pkg'
-    YOSEMITE_CATALOG_URL = ('https://swscan.apple.com/content/catalogs/others/'
-                        'index-10.10-10.9-mountainlion-lion-snowleopard-leopard'
-                        '.merged-1.sucatalog')
+    YOSEMITE_CATALOG_URL = (
+        'https://swscan.apple.com/content/catalogs/others/'
+        'index-10.10-10.9-mountainlion-lion-snowleopard-leopard'
+        '.merged-1.sucatalog')
 
     if os_vers.startswith('10.7'):
         catalog_url = LION_CATALOG_URL
@@ -602,8 +595,8 @@ def getPkgAndMakeIndexSproduct(destpath, os_vers='10.7'):
 def makeEmptyInstallerChoiceChanges(output_pkg_path):
     '''Creates an empty MacOSXInstaller.choiceChanges file'''
     destpath = os.path.join(output_pkg_path,
-        'Contents/Resources/OS X Install Data',
-        'MacOSXInstaller.choiceChanges')
+                            'Contents/Resources/OS X Install Data',
+                            'MacOSXInstaller.choiceChanges')
     changes = []
     try:
         plistlib.writePlist(changes, destpath)
@@ -731,7 +724,8 @@ def main():
     packages to install after the OS is installed'''
     global TMPDIR
 
-    usage = ('Usage: %prog --source InstallOSX.app|InstallESD.dmg\n'
+    usage = (
+        'Usage: %prog --source InstallOSX.app|InstallESD.dmg\n'
         '                           [--pkg path/to/additional.pkg]\n'
         '                           [--output path/to/InstallOSX.pkg]\n'
         '                           [--identifier com.example.installosx.pkg]\n'
@@ -743,22 +737,27 @@ def main():
         '    command-line.')
 
     parser = optparse.OptionParser(usage=usage)
-    parser.add_option('--source', '-s',
+    parser.add_option(
+        '--source', '-s',
         help='Required unless specified via plist. Path to Install Mac '
         'OS X Lion.app or Install OS X Foo.app or InstallESD.dmg')
-    parser.add_option('--pkg', '-p', action="append", dest='packages',
+    parser.add_option(
+        '--pkg', '-p', action="append", dest='packages',
         metavar='PACKAGE',
         help='Optional. An addtional package to include for installation. '
         'May be specified more than once.')
     parser.add_option('--output', '-o', help='Optional. Path for output pkg. '
-        'Defaults to current working directory.')
-    parser.add_option('--identifier', '--id',
+                      'Defaults to current working directory.')
+    parser.add_option(
+        '--identifier', '--id',
         help='Optional. Package identifier for the package. Defaults to '
         '"com.googlecode.munki.installosx.pkg"')
-    parser.add_option('--plist', help='Optional. Path to an XML plist file '
+    parser.add_option(
+        '--plist', help='Optional. Path to an XML plist file '
         'containing key/value pairs for Source, Output, Packages, and '
         'Identifier.')
-    parser.add_option('--make-dmg', action='store_true', help='Optional. '
+    parser.add_option(
+        '--make-dmg', action='store_true', help='Optional. '
         'Instead of creating an installer pkg, creates a disk image for use '
         'with VMware Fusion to install a customized OS X. Experimental.')
     options, arguments = parser.parse_args()
@@ -791,11 +790,11 @@ def main():
         installesd_dmg = os.path.join(
             source, 'Contents/SharedSupport/InstallESD.dmg')
         osinstall_mpkg = os.path.join(
-                source, 'Contents/SharedSupport/OSInstall.mpkg')
+            source, 'Contents/SharedSupport/OSInstall.mpkg')
         if (not os.path.exists(installesd_dmg) or
-            not os.path.exists(osinstall_mpkg)):
+                not os.path.exists(osinstall_mpkg)):
             fail('%s doesn\'t appear to be an OS X installer application!'
-                % source)
+                 % source)
 
     elif source.endswith('.dmg'):
         installesd_dmg = source
@@ -883,14 +882,13 @@ def main():
     output = options.output or plist_options.get('Output')
     if output:
         if ((options.make_dmg and output.endswith('.dmg')) or
-            output.endswith('.pkg')):
+                output.endswith('.pkg')):
             # we've been given a full path including the pkg/dmg name
             output_path = os.path.abspath(output)
         else:
             # it better be a pre-existing directory
             if not os.path.isdir(output):
-                fail(
-                    'Directory %s not found!' % output)
+                fail('Directory %s not found!' % output)
             else:
                 output_path = os.path.abspath(
                     os.path.join(output, outputname))
@@ -906,13 +904,13 @@ def main():
         print 'Additional packages:'
         print '----------------------------------------------------------------'
         for pkg in additional_packages:
-            if (not pkg.endswith('.pkg') and not pkg.endswith('.mpkg')):
+            if not pkg.endswith('.pkg') and not pkg.endswith('.mpkg'):
                 fail('%s doesn\'t look like a package!' % pkg)
             if not os.path.exists(pkg):
                 fail('Package %s not found!' % pkg)
             if os_version.startswith('10.10') and not is_flat_distribution(pkg):
-                fail ("%s is not a flat distribution package. "
-                      "This will cause Yosemite install to fail." % pkg)
+                fail('%s is not a flat distribution package. '
+                     'This will cause Yosemite install to fail.' % pkg)
             print os.path.basename(pkg)
         print '----------------------------------------------------------------'
         total_package_size = get_size_of_all_packages(additional_packages)
