@@ -708,9 +708,10 @@ def is_flat_distribution(pkg):
     proc = subprocess.Popen(cmd, shell=False, bufsize=-1,
                             stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    (output, err) = proc.communicate()
+    output = proc.communicate()[0]
     if proc.returncode:
         # some xar error; invalid pkg?
+        print >> sys.stderr, 'xar error getting TOC for %s' % pkg
         return False
     output_lines = output.splitlines()
     if 'Distribution' in output_lines or 'distribution' in output_lines:
@@ -761,6 +762,11 @@ def main():
         'Instead of creating an installer pkg, creates a disk image for use '
         'with VMware Fusion to install a customized OS X. Experimental.')
     options, arguments = parser.parse_args()
+
+    if arguments:
+        print >> sys.stderr, 'Arguments found with no option flags!'
+        parser.print_help()
+        exit(-1)
 
     # check to see if we're root
     # need to be root to copy things into the DMG with the right
