@@ -705,6 +705,26 @@ def addPackagesToInstallESD(installesd_dmg, packages,
             'Failed to create %s at: %s' % (output_dmg_path, err))
 
 
+def is_flat_distribution(pkg):
+    '''Returns True if pkg appears to be a flat distribution-style package,
+    False otherwise'''
+    if os.path.isdir(pkg):
+        # it's a bundle-style pkg
+        return False
+    cmd = ['/usr/bin/xar', '-tf', pkg]
+    proc = subprocess.Popen(cmd, shell=False, bufsize=-1,
+                            stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = proc.communicate()
+    if proc.returncode:
+        # some xar error; invalid pkg?
+        return False
+    output_lines = output.splitlines()
+    if 'Distribution' in output_lines or 'distribution' in output_lines:
+        return True
+    return False
+
+
 TMPDIR = None
 def main():
     '''Builds a custom package that installs OS X. You may specify additional
@@ -786,7 +806,7 @@ def main():
         fail('Unknown/unsupported source: %s' % source)
 
     # get some needed info from the disk image
-    print 'Verifying source...'
+    print 'Examining and verifying source...'
     mountpoints, unused_shadowpath = mountdmg(installesd_dmg)
     if not mountpoints:
         fail('Could not mount diskimage %s' % installesd_dmg)
@@ -890,6 +910,9 @@ def main():
                 fail('%s doesn\'t look like a package!' % pkg)
             if not os.path.exists(pkg):
                 fail('Package %s not found!' % pkg)
+            if os_version.startswith('10.10') and not is_flat_distribution(pkg):
+                fail ("%s is not a flat distribution package. "
+                      "This will cause Yosemite install to fail." % pkg)
             print os.path.basename(pkg)
         print '----------------------------------------------------------------'
         total_package_size = get_size_of_all_packages(additional_packages)
