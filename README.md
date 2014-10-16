@@ -1,7 +1,3 @@
->_Yosemite note_
-
->If you are testing createOSXinstallPkg with Yosemite, check out this note: https://devforums.apple.com/thread/250380
-
 ###Getting Started
 
 ####What you need
@@ -136,6 +132,25 @@ To get an idea what tools are available in the Lion install environment, boot in
 An additional limitation: the InstallESD.dmg volume has a limited amount of free space. To date, that space has been around 350MB. This is more than enough for some basic configuration/bootstrapping packages. But don't try to add Microsoft Office or iLife or Adobe Photoshop CS6. Not only are they too big to fit in the available space, they all contain pre- and post- scripts that are almost certain to fail in the OS X install environment.
 
 The best approach for additional packages is to add only what is necessary to boot the machine and connect it to your software deployment system -- Munki, Casper, Absolute Manage, etc, and let the software deployment system take over and install everything else once the machine is booted into a full OS.
+
+####Further note on additional packages and Yosemite
+
+Apple has made an undocumented change in Yosemite that affects this tool. If you add any additional packages for installation as part of the OS install/upgrade, they must all be _distribution_ style packages; not component packages.
+ 
+If you have an existing flat component pkg, you can convert it into a distribution pkg: `productbuild --package /path/to/component.pkg /path/to/distribution.pkg`
+ 
+I have not tested bundle-style distribution pkgs; would be interested to know if those are supported as well.
+ 
+If there are additional packages that the OS X installer does not like, this will result in an error dialog upon reboot:
+ 
+>Failed to open OS X Installer.
+>The path /System/Installation/Packages/OSinstall.mpkg appears to be missing or damaged.
+ 
+>with two buttons: "Restart" and "Startup Disk"
+ 
+The same issue affects customized NetInstall images created with System Image Utility.
+
+If you add additional packages to a customized NetInstall of Yosemite, they must be _distribution_ -style packages, or you get the same error.
 
 
 ####Note on installing OS X on FileVault-encrypted volumes
