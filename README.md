@@ -139,13 +139,15 @@ The best approach for additional packages is to add only what is necessary to bo
 
 Apple has made an undocumented change in Yosemite that affects this tool. If you add any additional packages for installation as part of the OS install/upgrade, they must all be _distribution_ style packages; not component packages.
  
-If you have an existing flat component pkg, you can convert it into a distribution pkg: `productbuild --package /path/to/component.pkg /path/to/distribution.pkg`
+If you have an existing flat component pkg, you can convert it into a distribution pkg: 
+
+`productbuild --package /path/to/component.pkg /path/to/distribution.pkg`
  
 I have not tested bundle-style distribution pkgs; would be interested to know if those are supported as well.
  
 If there are additional packages that the OS X installer does not like, this will result in an error dialog upon reboot:
  
->Failed to open OS X Installer.
+>Failed to open OS X Installer.<br/>
 >The path /System/Installation/Packages/OSinstall.mpkg appears to be missing or damaged.
  
 >with two buttons: "Restart" and "Startup Disk"
