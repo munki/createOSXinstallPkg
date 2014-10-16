@@ -1,4 +1,4 @@
-[_Yosemite note_](#further-note-on-additional-packages-and-yosemite_)
+[_Yosemite note_](#further-note-on-additional-packages-and-yosemite)
 
 ###Getting Started
 
