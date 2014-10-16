@@ -1,3 +1,5 @@
+[_Yosemite note_](#further-note-on-additional-packages-and-yosemite_)
+
 ###Getting Started
 
 ####What you need
