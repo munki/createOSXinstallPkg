@@ -977,11 +977,19 @@ def main():
 
     # either copy or link the dmg into place in install_data_path
     dest_path = os.path.join(install_data_path, 'InstallESD.dmg')
+    if os.path.exists(dest_path):
+        try:
+            # remove pre-existing dmg
+            os.unlink(dest_path)
+        except OSError, err:
+            cleanupFromFailAndExit(
+                'Could not remove pre-existing %s: %s' % (dest_path, err))
     try:
         print 'Attempting to link %s to %s...' % (install_dmg, dest_path)
         os.link(install_dmg, dest_path)
-    except OSError:
+    except OSError, err:
         # couldn't link, so try to copy
+        print 'Couldn\'t create link because: %s' % err
         try:
             print ('Link not possible. Copying %s to %s...'
                     % (install_dmg, dest_path))
