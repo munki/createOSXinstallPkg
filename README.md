@@ -1,6 +1,4 @@
->_Yosemite note_
-
->If you are testing createOSXinstallPkg with Yosemite, check out this note: https://devforums.apple.com/thread/250380
+[_Yosemite note_](#further-note-on-additional-packages-and-yosemite)
 
 ###Getting Started
 
@@ -137,7 +135,28 @@ An additional limitation: the InstallESD.dmg volume has a limited amount of free
 
 The best approach for additional packages is to add only what is necessary to boot the machine and connect it to your software deployment system -- Munki, Casper, Absolute Manage, etc, and let the software deployment system take over and install everything else once the machine is booted into a full OS.
 
+####Further note on additional packages and Yosemite
+
+Apple has made an undocumented change in Yosemite that affects this tool. If you add any additional packages for installation as part of the OS install/upgrade, they must all be _distribution_ style packages; not component packages.
+ 
+If you have an existing flat component pkg, you can convert it into a distribution pkg: 
+
+`productbuild --package /path/to/component.pkg /path/to/distribution.pkg`
+ 
+I have not tested bundle-style distribution pkgs; would be interested to know if those are supported as well.
+ 
+If there are additional packages that the OS X installer does not like, this will result in an error dialog upon reboot:
+ 
+>Failed to open OS X Installer.<br/>
+>The path /System/Installation/Packages/OSinstall.mpkg appears to be missing or damaged.
+ 
+>with two buttons: "Restart" and "Startup Disk"
+ 
+The same issue affects customized NetInstall images created with System Image Utility.
+
+If you add additional packages to a customized NetInstall of Yosemite, they must be _distribution_ -style packages, or you get the same error.
+
 
 ####Note on installing OS X on FileVault-encrypted volumes
 
-Installing Lion, Mountain Lion, or Mavericks requires a reboot after the install is set up, but before the actual OS X Installer runs. When installing to a FileVault-encrypted volume, after the initial reboot, the pre-boot unlock screen appears. Someone will have to manually unlock the FileVault-encrypted volume before the actual OS X installation can occur. Once the disk is unlocked, installation should proceed normally.
+Installing Lion, Mountain Lion, Mavericks or Yosemite requires a reboot after the install is set up, but before the actual OS X Installer runs. When installing to a FileVault-encrypted volume, after the initial reboot, the pre-boot unlock screen appears. Someone will have to manually unlock the FileVault-encrypted volume before the actual OS X installation can occur. Once the disk is unlocked, installation should proceed normally.  Apple's Install OS X.app does some undocumented (and probably non-third-party-supported) magic to cause an authenticated reboot; this bypasses the pre-boot unlock screen.
