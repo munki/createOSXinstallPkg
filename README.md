@@ -1,3 +1,9 @@
+##createOSXinstallPkg
+
+This tool allows you to create an installer package from an "Install OS X.app" or an InstallESD.dmg. You can use this package to install OS X on an empty partition, but perhaps more interestingly, you can also use it to upgrade existing OS X installations to a newer version of the OS X. There are many tools and workflows that support the installation of Apple packages; you can use these together with an OS X installation package to upgrade machines to the latest version of OS X.
+
+This is especially interesting when used with tools like [Munki](https://github.com/munki/munki) -- you can automate the upgrade of a group of machines while still preserving user data, or offer an upgrade as a "Self-Service"-type option where a user can initiate an OS X upgrade themselves without needing to have administrative rights.
+
 [_Please read this important Yosemite note_](#further-note-on-additional-packages-and-yosemite)
 
 ###Getting Started
