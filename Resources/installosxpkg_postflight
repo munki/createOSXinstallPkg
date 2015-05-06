@@ -67,7 +67,7 @@ def mountdmg(dmgpath, use_shadow=False):
     mountpoints = []
     dmgname = os.path.basename(dmgpath)
     cmd = ['/usr/bin/hdiutil', 'attach', dmgpath,
-                '-mountRandom', '/tmp', '-nobrowse', '-plist']
+                '-mountRandom', tempfile.mkdtemp(), '-nobrowse', '-plist']
     if use_shadow:
         cmd.append('-shadow')
     proc = subprocess.Popen(cmd,
@@ -330,7 +330,7 @@ def mountHelperPartitionHidden(deviceIdentifier):
     if volumeinfo.get('MountPoint'):
         return volumeinfo['MountPoint']
     # not currently mounted; let's mount it hidden
-    mountpoint = tempfile.mkdtemp(dir='/tmp')
+    mountpoint = tempfile.mkdtemp()
     device = os.path.join('/dev', deviceIdentifier)
     try:
         # we use mount instead of diskutil to mount the disk
