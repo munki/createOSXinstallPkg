@@ -21,6 +21,7 @@ createOSXinstallPkg
 Created by Greg Neagle on 2012-07-16.
 Modified June 2013 for WWDC 2013
 Modified June 2014 for WWDC 2014
+Modified June 2015 for WWDC 2015
 """
 
 import sys
@@ -539,6 +540,12 @@ def getPkgAndMakeIndexSproduct(destpath, os_vers='10.7'):
         'index-10.10-10.9-mountainlion-lion-snowleopard-leopard'
         '.merged-1.sucatalog')
 
+    EL_CAPITAN_PKGNAME = 'OSX_10_11_IncompatibleAppList.pkg'
+    EL_CAPITAN_CATALOG_URL = (
+        'https://swscan.apple.com/content/catalogs/others/'
+        'index-10.11-10.10-10.9-mountainlion-lion-snowleopard-leopard'
+        '.merged-1.sucatalog')
+
     if os_vers.startswith('10.7'):
         catalog_url = LION_CATALOG_URL
         package_name = LION_PKGNAME
@@ -555,6 +562,10 @@ def getPkgAndMakeIndexSproduct(destpath, os_vers='10.7'):
         catalog_url = YOSEMITE_CATALOG_URL
         package_name = YOSEMITE_PKGNAME
         os_vers = '10.10'
+    elif os_vers.startswith('10.11'):
+        catalog_url = EL_CAPITAN_CATALOG_URL
+        package_name = EL_CAPITAN_PKGNAME
+        os_vers = '10.11'
     else:
         print >> sys.stderr, 'Unsupported OS version!'
         return
