@@ -477,7 +477,8 @@ def createBootPlist(install_data_path):
     # </plist>
 
     boot_pl = {}
-    boot_pl['Kernel Cache'] = '/%s/kernelcache' % INSTALL_DATA_DIR_NAME
+    boot_pl['Kernel Cache'] = '/%s/%s' % (
+        INSTALL_DATA_DIR_NAME, kernelcache_name)
     boot_pl['Kernel Flags'] = (
         'container-dmg=file://localhost/%s/InstallESD.dmg '
         'root-dmg=file://localhost/BaseSystem.dmg'
@@ -762,8 +763,7 @@ def setupHelperPartition(mountpoint, install_data_path):
 
     RPSdir = getRPSdir(mountpoint)
     usrstandalonedir = os.path.join(RPSdir, 'usr/standalone/i386')
-    kernelcachedir = os.path.join(
-        RPSdir, 'System/Library/Caches/com.apple.kext.caches/Startup')
+    kernelcachedir = os.path.join(RPSdir, kernelcache_dir)
     bootpdir = os.path.join(RPSdir, 'Library/Preferences/SystemConfiguration')
     for directory in [usrstandalonedir, kernelcachedir, bootpdir]:
         if not os.path.exists(directory):
@@ -832,9 +832,8 @@ def updateHelperPartitions(install_vol_path, install_data_path):
             cleanupFromFailAndExit(
                 'Failed when updating com.apple.Boot.plist: %s' % err)
         # copy kernelcache to helper partition
-        kernelcache = os.path.join(install_data_path, 'kernelcache')
-        dest_path = os.path.join(RPSdir,
-            'System/Library/Caches/com.apple.kext.caches/Startup')
+        kernelcache = os.path.join(install_data_path, kernelcache_name)
+        dest_path = os.path.join(RPSdir, kernelcache_dir)
         try:
             print "Copying kernelcache to helper partition"
             shutil.copy(kernelcache, dest_path)
@@ -928,9 +927,15 @@ def main():
 
     # copy kernelcache and boot.efi from root of dmg
     # to install_data_path
+    global kernelcache_name
+    global kernelcache_dir
+    kernelcache_name = 'kernelcache'
+    kernelcache_dir = 'System/Library/Caches/com.apple.kext.caches/Startup'
+
     kernelcache = os.path.join(mountpoint, 'kernelcache')
     bootefi = os.path.join(mountpoint, 'boot.efi')
     if os.path.exists(kernelcache) and os.path.exists(bootefi):
+        # 10.7 and 10.8 have these files at the root of InstallESD.dmg
         try:
             print ('Copying kernelcache and boot.efi to %s...'
                     % install_data_path)
@@ -940,15 +945,26 @@ def main():
             unmountdmg(mountpoint)
             cleanupFromFailAndExit('Could not copy needed resources: %s' % err)
     else:
-        # we need to copy from the BaseSystem.dmg
+        # for 10.9 and later we need to copy from the BaseSystem.dmg
         basesystem_dmg = os.path.join(mountpoint, 'BaseSystem.dmg')
         basesystem_mountpoints = mountdmg(basesystem_dmg)
         if not basesystem_mountpoints:
             unmountdmg(mountpoint)
             cleanupFromFailAndExit('Could not mount BaseSystem.dmg')
         basesystem_mountpoint = basesystem_mountpoints[0]
-        kernelcache = os.path.join(basesystem_mountpoint,
-            'System/Library/Caches/com.apple.kext.caches/Startup/kernelcache')
+
+        # if prelinkedkernel file exists, this must be at least 10.11, so set
+        # kernelcache paths differently - PrelinkedKernels dir exists
+        # on 10.10, but it is empty
+        prelinked_path = os.path.join(
+            basesystem_mountpoint,
+            'System/Library/PrelinkedKernels/prelinkedkernel')
+        if os.path.exists(prelinked_path):
+            kernelcache_name = 'prelinkedkernel'
+            kernelcache_dir = 'System/Library/PrelinkedKernels'
+
+        kernelcache = os.path.join(
+            basesystem_mountpoint, kernelcache_dir, kernelcache_name)
         bootefi = os.path.join(basesystem_mountpoint,
             'System/Library/CoreServices/boot.efi')
         try:
