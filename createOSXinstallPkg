@@ -136,7 +136,8 @@ def makeDescriptionPlist(output_pkg_path, os_version='10.7', build_number=None):
     titles = {'10.7':  'Mac OS X Lion',
               '10.8':  'OS X Mountain Lion',
               '10.9':  'OS X Mavericks',
-              '10.10': 'OS X Yosemite'}
+              '10.10': 'OS X Yosemite',
+              '10.11': 'OS X El Capitan'}
     title = titles.get(major_version, major_version)
     description = ('Unattended custom install of %s version %s'
                    % (title, os_version))
