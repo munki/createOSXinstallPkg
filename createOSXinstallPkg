@@ -926,7 +926,7 @@ def main():
                 fail('%s doesn\'t look like a package!' % pkg)
             if not os.path.exists(pkg):
                 fail('Package %s not found!' % pkg)
-            minor_version = int(os_version.split('.')[1]
+            minor_version = int(os_version.split('.')[1])
             if (minor_version >= 10 and not is_flat_distribution(pkg)):
                 fail('%s is not a flat distribution package. '
                      'This will cause a 10.10+ '
