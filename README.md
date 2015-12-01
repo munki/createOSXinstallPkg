@@ -131,7 +131,7 @@ You can specify multiple packages. They will be installed in the order given.
 
 ####Notes on additional packages
 
-The OS X install environment is very stripped down. There are many command-line tools that are not available when booted into this environment. Python and Ruby are not available, either. This can effect pre- and postflight scripts in packages. You may find that some packages that rely on pre- or postflight scripts to perform important tasks will fail to run properly in the OS X install environment. Check the install log at /var/log/install.log after the install is complete, or open the log window during installation to monitor pre- and postflight scripts.
+The OS X install environment is very stripped down. There are many command-line tools that are not available when booted into this environment. Python and Ruby are not available, either. This can affect pre- and postflight scripts in packages. You may find that some packages that rely on pre- or postflight scripts to perform important tasks will fail to run properly in the OS X install environment. Check the install log at /var/log/install.log after the install is complete, or open the log window during installation to monitor pre- and postflight scripts.
 
 This issue may limit which packages you can use successfully in the OS X installation environment. You should carefully audit and pre- and post- scripts in any packages you add to your install to be certain they will run correctly in the OS X install environment.
 
