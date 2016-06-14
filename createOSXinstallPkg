@@ -554,8 +554,8 @@ def getPkgAndMakeIndexSproduct(destpath, os_vers='10.7'):
 
     SIERRA_PKGNAME = 'OSX_10_12_IncompatibleAppList.pkg'
     SIERRA_CATALOG_URL = (
-        'https://swscan.apple.com/content/catalogs/others/'
-        'index-10.12seed-10.12-10.11-10.10-10.9-mountainlion-lion-snowleopard-leopard'
+        'https://swscan.apple.com/content/catalogs/others'
+        'index-10.12-10.11-10.10-10.9-mountainlion-lion-snowleopard-leopard'
         '.merged-1.sucatalog')
 
     if os_vers.startswith('10.7'):
