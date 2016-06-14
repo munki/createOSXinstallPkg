@@ -17,11 +17,11 @@ This toolset, which includes:
 
 You may put the toolset anywhere you'd like, but keep the Resources folder and its contents in the same directory as `createOSXinstallPkg`.
 
-You'll also need an installation source for Lion, Mountain Lion or Mavericks: a copy of the "Install Mac OS X Lion.app", "Install OS X Mountain Lion.app", "Install OS X Mavericks.app", or a copy of the "InstallESD.dmg" contained within one of these applications.
+You'll also need an installation source for OS X (10.7 through 10.11 currently supported): a copy of the "Install Mac OS X Lion.app", "Install OS X Mountain Lion.app", "Install OS X Mavericks.app", etc, or a copy of the "InstallESD.dmg" contained within one of these applications.
 
-Finally, and most importantly, you'll need the rights to install Lion or Mountain Lion on the machines you manage. Just because this tool allows you to create an OS X installation package does not mean it is legal for your organization to install it on all your Macs.
+Finally, and most importantly, you'll need the rights to install the OS X version on the machines you manage. Just because this tool allows you to create an OS X installation package does not mean it is legal for your organization to install it on all your Macs.
 
-(Since Mavericks is free, one assumes you can install it with abandon. However, I am not a lawyer, and this does not constitute advice or a recommendation.)
+(Since Mavericks, Yosemite, and El Capitan are free, one assumes you can install them with abandon. However, I am not a lawyer, and this does not constitute advice or a recommendation.)
 
 ####How to use it
 
@@ -141,7 +141,7 @@ An additional limitation: the InstallESD.dmg volume has a limited amount of free
 
 The best approach for additional packages is to add only what is necessary to boot the machine and connect it to your software deployment system -- Munki, Casper, Absolute Manage, etc, and let the software deployment system take over and install everything else once the machine is booted into a full OS.
 
-####Further note on additional packages and Yosemite
+####Further note on additional packages and Yosemite (and El Capitan)
 
 Apple has made an undocumented change in Yosemite that affects this tool. If you add any additional packages for installation as part of the OS install/upgrade, they must all be _distribution_ style packages; not component packages.
  
@@ -160,9 +160,9 @@ If there are additional packages that the OS X installer does not like, this wil
  
 The same issue affects customized NetInstall images created with System Image Utility.
 
-If you add additional packages to a customized NetInstall of Yosemite, they must be _distribution_ -style packages, or you get the same error.
+If you add additional packages to a customized NetInstall of 10.10 or 10.11, they must be _distribution_ -style packages, or you get the same error.
 
 
 ####Note on installing OS X on FileVault-encrypted volumes
 
-Installing Lion, Mountain Lion, Mavericks or Yosemite requires a reboot after the install is set up, but before the actual OS X Installer runs. When installing to a FileVault-encrypted volume, after the initial reboot, the pre-boot unlock screen appears. Someone will have to manually unlock the FileVault-encrypted volume before the actual OS X installation can occur. Once the disk is unlocked, installation should proceed normally.  Apple's Install OS X.app does some undocumented (and probably non-third-party-supported) magic to cause an authenticated reboot; this bypasses the pre-boot unlock screen.
+Installing Lion, Mountain Lion, Mavericks, Yosemite or El Capitan requires a reboot after the install is set up, but before the actual OS X Installer runs. When installing to a FileVault-encrypted volume, after the initial reboot, the pre-boot unlock screen appears. Someone will have to manually unlock the FileVault-encrypted volume before the actual OS X installation can occur. Once the disk is unlocked, installation should proceed normally.  Apple's Install OS X.app does some undocumented (and probably non-third-party-supported) magic to cause an authenticated reboot; this bypasses the pre-boot unlock screen.
