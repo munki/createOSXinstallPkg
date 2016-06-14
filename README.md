@@ -4,7 +4,7 @@ This tool allows you to create an installer package from an "Install OS X.app" o
 
 This is especially interesting when used with tools like [Munki](https://github.com/munki/munki) -- you can automate the upgrade of a group of machines while still preserving user data, or offer an upgrade as a "Self-Service"-type option where a user can initiate an OS X upgrade themselves without needing to have administrative rights.
 
-[_Please read this important Yosemite note_](#further-note-on-additional-packages-and-yosemite)
+[_Please read this important 10.10+ note_](#further-note-on-additional-packages-and-yosemite-and-el-capitan)
 
 ###Getting Started
 
