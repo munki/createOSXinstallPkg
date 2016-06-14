@@ -22,6 +22,7 @@ Created by Greg Neagle on 2012-07-16.
 Modified June 2013 for WWDC 2013
 Modified June 2014 for WWDC 2014
 Modified June 2015 for WWDC 2015
+Modified June 2016 for WWDC 2016
 """
 
 import sys
@@ -137,7 +138,8 @@ def makeDescriptionPlist(output_pkg_path, os_version='10.7', build_number=None):
               '10.8':  'OS X Mountain Lion',
               '10.9':  'OS X Mavericks',
               '10.10': 'OS X Yosemite',
-              '10.11': 'OS X El Capitan'}
+              '10.11': 'OS X El Capitan',
+              '10.12': 'macOS Sierra'}
     title = titles.get(major_version, major_version)
     description = ('Unattended custom install of %s version %s'
                    % (title, os_version))
@@ -281,7 +283,7 @@ def getOSversionInfoFromDist(distfile):
     return osVersion, osBuildVersion
 
 
-def getItemsFromDist(filename):
+def getItemsFromDist(os_version, filename):
     '''Gets the title, script, installation-check and volume-check elements
     from an OSXInstall.mpkg distribution file'''
     try:
@@ -298,7 +300,10 @@ def getItemsFromDist(filename):
         item_dict['title'] = title_elements[0].firstChild.wholeText
     script_elements = dom.getElementsByTagName('script')
     if len(script_elements):
-        item_dict['script'] = script_elements[0].toprettyxml()
+        if os_version == '10.12':
+            item_dict['script'] = script_elements[1].toprettyxml()
+        else:
+            item_dict['script'] = script_elements[0].toprettyxml()
     installation_check_elements = dom.getElementsByTagName('installation-check')
     if len(installation_check_elements):
         item_dict['installation_check'] = \
@@ -309,12 +314,12 @@ def getItemsFromDist(filename):
     return item_dict
 
 
-def make_distribution(output_pkg_path, source_pkg_dist,
+def make_distribution(os_version, output_pkg_path, source_pkg_dist,
                       installKBytes=DEFAULT_INSTALLKBYTES):
     '''Makes a distribution file for the target package based on one
     from OSInstall.mpkg in the app or InstallESD.dmg'''
 
-    item_dict = getItemsFromDist(source_pkg_dist)
+    item_dict = getItemsFromDist(os_version, source_pkg_dist)
 
     # disable the check for command line installs
     item_dict['script'] = item_dict['script'].replace(
@@ -417,7 +422,7 @@ def makePackage(output_pkg_path, expanded_osinstall_mpkg,
     copy_postflight_script(output_pkg_path)
     # copy some items from OSInstall.mpkg
     dist_file = os.path.join(expanded_osinstall_mpkg, 'Distribution')
-    make_distribution(output_pkg_path, dist_file, installKBytes=8*1024*1024)
+    make_distribution(os_version, output_pkg_path, dist_file, installKBytes=8*1024*1024)
     source_pkg_resources = os.path.join(expanded_osinstall_mpkg, 'Resources')
     copyLocalizedResources(output_pkg_path, source_pkg_resources)
 
@@ -547,6 +552,12 @@ def getPkgAndMakeIndexSproduct(destpath, os_vers='10.7'):
         'index-10.11-10.10-10.9-mountainlion-lion-snowleopard-leopard'
         '.merged-1.sucatalog')
 
+    SIERRA_PKGNAME = 'OSX_10_12_IncompatibleAppList.pkg'
+    SIERRA_CATALOG_URL = (
+        'https://swscan.apple.com/content/catalogs/others/'
+        'index-10.12seed-10.12-10.11-10.10-10.9-mountainlion-lion-snowleopard-leopard'
+        '.merged-1.sucatalog')
+
     if os_vers.startswith('10.7'):
         catalog_url = LION_CATALOG_URL
         package_name = LION_PKGNAME
@@ -567,6 +578,10 @@ def getPkgAndMakeIndexSproduct(destpath, os_vers='10.7'):
         catalog_url = EL_CAPITAN_CATALOG_URL
         package_name = EL_CAPITAN_PKGNAME
         os_vers = '10.11'
+    elif os_vers.startswith('10.12'):
+        catalog_url = SIERRA_CATALOG_URL
+        package_name = SIERRA_PKGNAME
+        os_vers = '10.12'
     else:
         print >> sys.stderr, 'Unsupported OS version!'
         return
