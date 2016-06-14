@@ -283,7 +283,7 @@ def getOSversionInfoFromDist(distfile):
     return osVersion, osBuildVersion
 
 
-def getItemsFromDist(os_version, filename):
+def getItemsFromDist(filename):
     '''Gets the title, script, installation-check and volume-check elements
     from an OSXInstall.mpkg distribution file'''
     try:
@@ -300,10 +300,10 @@ def getItemsFromDist(os_version, filename):
         item_dict['title'] = title_elements[0].firstChild.wholeText
     script_elements = dom.getElementsByTagName('script')
     if len(script_elements):
-        if os_version == '10.12':
-            item_dict['script'] = script_elements[1].toprettyxml()
-        else:
-            item_dict['script'] = script_elements[0].toprettyxml()
+        for script_element in script_elements:
+            if script_element.toprettyxml() != '<script/>':
+                item_dict['script'] = script_element.toprettyxml()
+        #item_dict['script'] = script_elements[1:].toprettyxml()
     installation_check_elements = dom.getElementsByTagName('installation-check')
     if len(installation_check_elements):
         item_dict['installation_check'] = \
@@ -314,12 +314,12 @@ def getItemsFromDist(os_version, filename):
     return item_dict
 
 
-def make_distribution(os_version, output_pkg_path, source_pkg_dist,
+def make_distribution(output_pkg_path, source_pkg_dist,
                       installKBytes=DEFAULT_INSTALLKBYTES):
     '''Makes a distribution file for the target package based on one
     from OSInstall.mpkg in the app or InstallESD.dmg'''
 
-    item_dict = getItemsFromDist(os_version, source_pkg_dist)
+    item_dict = getItemsFromDist(source_pkg_dist)
 
     # disable the check for command line installs
     item_dict['script'] = item_dict['script'].replace(
@@ -422,7 +422,7 @@ def makePackage(output_pkg_path, expanded_osinstall_mpkg,
     copy_postflight_script(output_pkg_path)
     # copy some items from OSInstall.mpkg
     dist_file = os.path.join(expanded_osinstall_mpkg, 'Distribution')
-    make_distribution(os_version, output_pkg_path, dist_file, installKBytes=8*1024*1024)
+    make_distribution(output_pkg_path, dist_file, installKBytes=8*1024*1024)
     source_pkg_resources = os.path.join(expanded_osinstall_mpkg, 'Resources')
     copyLocalizedResources(output_pkg_path, source_pkg_resources)
 
