@@ -822,10 +822,7 @@ def main():
             fail('%s doesn\'t exist or isn\'t an app!' % source)
         installesd_dmg = os.path.join(
             source, 'Contents/SharedSupport/InstallESD.dmg')
-        osinstall_mpkg = os.path.join(
-            source, 'Contents/SharedSupport/OSInstall.mpkg')
-        if (not os.path.exists(installesd_dmg) or
-                not os.path.exists(osinstall_mpkg)):
+        if not os.path.exists(installesd_dmg):
             fail('%s doesn\'t appear to be an OS X installer application!'
                  % source)
 
