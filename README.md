@@ -6,6 +6,8 @@ This is especially interesting when used with tools like [Munki](https://github.
 
 [_Please read this important 10.10+ note_](#further-note-on-additional-packages-and-yosemite-and-el-capitan)
 
+[_Please read this important 10.11+ note_](#notes-on-el-capitan+)
+
 ###Getting Started
 
 ####What you need
@@ -166,3 +168,8 @@ If you add additional packages to a customized NetInstall of 10.10 or 10.11, the
 ####Note on installing OS X on FileVault-encrypted volumes
 
 Installing Lion, Mountain Lion, Mavericks, Yosemite or El Capitan requires a reboot after the install is set up, but before the actual OS X Installer runs. When installing to a FileVault-encrypted volume, after the initial reboot, the pre-boot unlock screen appears. Someone will have to manually unlock the FileVault-encrypted volume before the actual OS X installation can occur. Once the disk is unlocked, installation should proceed normally.  Apple's Install OS X.app does some undocumented (and probably non-third-party-supported) magic to cause an authenticated reboot; this bypasses the pre-boot unlock screen.
+
+
+####Notes on El Capitan+
+
+El Capitan introduced SIP (System Integrity Protection), which prevents even root from performing some actions and making some filesystem changes. When running under an SIP-enabled system, the postflight script in a createOSXinstallPkg-created package may be prevented from making the changes needed to set up the OS X install. Effectively this means that you cannot use a createOSXinstallPkg-created package to upgrade a 10.11 machine to 10.12, or to reinstall 10.11 or later when running 10.11 or later. Apple has not yet provided us with the parts to build a clear replacement, but feel free to experiment with the `startosinstall` binary inside the El Capitan and Sierra installers, and file bugs with Apple on its functionality.
