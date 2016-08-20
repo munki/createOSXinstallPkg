@@ -6,7 +6,7 @@ This is especially interesting when used with tools like [Munki](https://github.
 
 [_Please read this important 10.10+ note_](#further-note-on-additional-packages-and-yosemite-and-el-capitan)
 
-[_Please read this important 10.11+ note_](#notes-on-el-capitan+)
+[_Please read this important 10.11+ note_](#notes-on-el-capitan)
 
 ###Getting Started
 
