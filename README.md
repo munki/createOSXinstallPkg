@@ -92,12 +92,13 @@ Those actions are:
   8. Create an `index.sproduct` file and an `OSInstallAttr.plist` in the `OS X Install Data` directory. These are also used by the OS X Installer.
   9. Set a variable in nvram that the OS X Installer uses to find the product install info after reboot.
   10. Use the `bless` command to cause the Mac to boot from the kernel files copied to the `OS X Install Data` directory.
+  11. If the target volume is a Core Storage or Apple RAID volume, setup/update boot helper partitions (these are the ones that show up as type "Apple_Boot" in the output of `diskutil list`).
   
-Since most of the work is done with a postflight script, and since that script may need to do a lengthy copy of almost 4GB of data (if the package is not on the target volume), you may see a long delay at the "Running package scripts" stage of installation. This is normal. (Annoyingly, the Installer.app displays "Install time remaining: Less than a minute" for several minutes during this stage.)
+Since most of the work is done with a postflight script, and since that script may need to do a lengthy copy of around 4GB of data (if the package is not on the target volume), you may see a long delay at the "Running package scripts" stage of installation. This is normal. (Annoyingly, the Installer.app displays "Install time remaining: Less than a minute" for several minutes during this stage.)
 
 The next step would be to reboot, but the postflight script does not do this; it just exits. The package is marked as requiring a reboot, so whatever mechanism is used to install the package is responsible for rebooting as soon as possible after the install.
 
-Upon reboot, the machine boots and runs the OS X Installer just as if you had run the "Install Mac OS X Lion" or "Install OS X Mountain Lion" application manually. It creates or updates a "Recovery HD" partition and installs OS X on the target volume, displaying the OS X Installer GUI. When installation is complete, the machine reboots a second time, this time booting from the new OS X installation.
+Upon reboot, the machine boots and runs the OS X Installer just as if you had run the "Install Mac OS X Lion" or "Install OS X El Capitan" application manually. It creates or updates a "Recovery HD" partition and installs OS X on the target volume, displaying the OS X Installer GUI. When installation is complete, the machine reboots a second time, this time booting from the new OS X installation.
 
 
 ####Preinstall checks
@@ -135,7 +136,7 @@ The OS X install environment is very stripped down. There are many command-line 
 
 This issue may limit which packages you can use successfully in the OS X installation environment. You should carefully audit and pre- and post- scripts in any packages you add to your install to be certain they will run correctly in the OS X install environment.
 
-To get an idea what tools are available in the Lion install environment, boot into the Recovery HD. The tools available in this environment are the same as those available in the OS X Install environment.
+To get an idea what tools are available in the OS X install environment, boot into the Recovery HD. The tools available in this environment are the same as those available in the OS X Install environment.
 
 An additional limitation: the InstallESD.dmg volume has a limited amount of free space. To date, that space has been around 350MB. This is more than enough for some basic configuration/bootstrapping packages. But don't try to add Microsoft Office or iLife or Adobe Photoshop CS6. Not only are they too big to fit in the available space, they all contain pre- and post- scripts that are almost certain to fail in the OS X install environment.
 
@@ -166,3 +167,5 @@ If you add additional packages to a customized NetInstall of 10.10 or 10.11, the
 ####Note on installing OS X on FileVault-encrypted volumes
 
 Installing Lion, Mountain Lion, Mavericks, Yosemite or El Capitan requires a reboot after the install is set up, but before the actual OS X Installer runs. When installing to a FileVault-encrypted volume, after the initial reboot, the pre-boot unlock screen appears. Someone will have to manually unlock the FileVault-encrypted volume before the actual OS X installation can occur. Once the disk is unlocked, installation should proceed normally.  Apple's Install OS X.app does some undocumented (and probably non-third-party-supported) magic to cause an authenticated reboot; this bypasses the pre-boot unlock screen.
+
+If your software deployment tool supports doing an authenticated reboot on Filevault-encrypted machines, you should select that option to avoid this issue. (JAMF Casper is one such tool.)
