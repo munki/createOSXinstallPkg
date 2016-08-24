@@ -17,7 +17,7 @@ This toolset, which includes:
 
 You may put the toolset anywhere you'd like, but keep the Resources folder and its contents in the same directory as `createOSXinstallPkg`.
 
-You'll also need an installation source for OS X (10.7 through 10.11 currently supported): a copy of the "Install Mac OS X Lion.app", "Install OS X Mountain Lion.app", "Install OS X Mavericks.app", etc, or a copy of the "InstallESD.dmg" contained within one of these applications.
+You'll also need an installation source for OS X (10.7 through 10.11 currently supported): a copy of the "Install Mac OS X Lion.app", "Install OS X Mountain Lion.app", "Install OS X Mavericks.app", etc, install application you can get from the Mac App Store.
 
 Finally, and most importantly, you'll need the rights to install the OS X version on the machines you manage. Just because this tool allows you to create an OS X installation package does not mean it is legal for your organization to install it on all your Macs.
 
