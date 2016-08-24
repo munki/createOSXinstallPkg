@@ -38,6 +38,9 @@ import tempfile
 from xml.dom import minidom
 from xml.parsers.expat import ExpatError
 
+# we use lots of camelCase-style names. Deal with it.
+# pylint: disable=C0103
+
 DEBUG = False
 DEFAULT_INSTALLKBYTES = 8 * 1024 * 1024
 
@@ -106,7 +109,7 @@ def unmountdmg(mountpoint):
     proc = subprocess.Popen(['/usr/bin/hdiutil', 'detach', mountpoint],
                             bufsize=-1, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
-    (unused_output, err) = proc.communicate()
+    (dummy_output, err) = proc.communicate()
     if proc.returncode:
         print >> sys.stderr, 'Polite unmount failed: %s' % err
         print >> sys.stderr, 'Attempting to force unmount %s' % mountpoint
@@ -446,7 +449,7 @@ def get_dir_size(some_dir):
     '''Gets the total size of some_dir. Very helpful in determining
     the size of bundle packages.'''
     total_size = 0
-    for dirpath, unused_dirnames, filenames in os.walk(some_dir):
+    for dirpath, dummy_dirnames, filenames in os.walk(some_dir):
         for filename in filenames:
             filepath = os.path.join(dirpath, filename)
             total_size += os.path.getsize(filepath)
@@ -466,7 +469,7 @@ def get_size_of_all_packages(pkglist):
 
 def get_available_free_space_in_dmg(some_dmg):
     '''Returns free disk space on some_dmg in Kbytes'''
-    (mountpoints, unused_shadowpath) = mountdmg(some_dmg)
+    (mountpoints, dummy_shadowpath) = mountdmg(some_dmg)
     if mountpoints:
         stat = os.statvfs(mountpoints[0])
         free = stat.f_bavail * stat.f_frsize
@@ -825,7 +828,7 @@ def main():
         except (ExpatError, IOError), err:
             fail('Could not read %s: %s' % (options.plist, err))
 
-    if not options.source and not 'Source' in plist_options:
+    if not options.source and 'Source' not in plist_options:
         print >> sys.stderr, ('ERROR: Must have --source option!')
         parser.print_usage()
         exit(1)
@@ -853,7 +856,7 @@ def main():
 
     # get some needed info from the disk image
     print 'Examining and verifying source...'
-    mountpoints, unused_shadowpath = mountdmg(installesd_dmg)
+    mountpoints, dummy_shadowpath = mountdmg(installesd_dmg)
     if not mountpoints:
         fail('Could not mount diskimage %s' % installesd_dmg)
     mountpoint = mountpoints[0]
@@ -864,7 +867,7 @@ def main():
         unmountdmg(mountpoint)
         fail('Missing BaseSystem.dmg in %s'% source)
 
-    basesystemmountpoints, unused_shadowpath = mountdmg(basesystem_dmg)
+    basesystemmountpoints, dummy_shadowpath = mountdmg(basesystem_dmg)
     basesystemmountpoint = basesystemmountpoints[0]
     system_version_plist = os.path.join(
         basesystemmountpoint,

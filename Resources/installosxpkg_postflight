@@ -39,9 +39,15 @@ import urllib2
 
 from xml.parsers.expat import ExpatError
 
+# we use lots of camelCase-style names. Deal with it.
+# pylint: disable=C0103
 
+# some globals
 INSTALL_DATA_DIR_NAME = 'OS X Install Data'
 ENCODED_INSTALL_DATA_DIR_NAME = urllib2.quote(INSTALL_DATA_DIR_NAME)
+
+kernelcache_name = 'kernelcache'
+kernelcache_dir = 'System/Library/Caches/com.apple.kext.caches/Startup'
 
 
 def cleanupFromFailAndExit(errmsg=''):
@@ -99,7 +105,7 @@ def unmountdmg(mountpoint):
     proc = subprocess.Popen(['/usr/bin/hdiutil', 'detach', mountpoint],
                             bufsize=-1, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
-    (unused_output, err) = proc.communicate()
+    (dummy_output, err) = proc.communicate()
     if proc.returncode:
         print >> sys.stderr, 'Polite unmount failed: %s' % err
         print >> sys.stderr, 'Attempting to force unmount %s' % mountpoint
@@ -318,7 +324,7 @@ def getRPSdir(mountpoint):
         try:
             os.makedirs(RPSdir)
         except OSError, err:
-            unused_result = unmountVolume(mountpoint)
+            dummy_result = unmountVolume(mountpoint)
             cleanupFromFailAndExit('Could not create com.apple.boot directory '
                                    'on helper partition: %s' % err)
     return RPSdir
@@ -394,7 +400,7 @@ def getBootPlistRootUUID(deviceIdentifier):
         else:
             print 'Apple_Boot partition %s debug info: %s' % (
                 deviceIdentifier, os.listdir(mountpoint))
-        unused_result = unmountVolume(mountpoint)
+        dummy_result = unmountVolume(mountpoint)
     return result
 
 
@@ -762,10 +768,10 @@ def run_brtool(installvolumepath, install_data_path):
     # System/Library/CoreServices/SystemVersion.plist in the basedmg can
     # tell us which version of OS X we are installing, and therefore we
     # can use the correct syntax.
+    system_version_plist = os.path.join(
+        basedmg_mountpoint, 'System/Library/CoreServices/SystemVersion.plist')
     try:
-        system_version_info = plistlib.readPlist(
-            os.path.join(basedmg_mountpoint,
-                         'System/Library/CoreServices/SystemVersion.plist'))
+        system_version_info = plistlib.readPlist(system_version_plist)
     except (ExpatError, IOError), err:
         print >> sys.stderr, (
             'Could not read %s: %s' % (system_version_plist, err))
@@ -799,7 +805,7 @@ def run_brtool(installvolumepath, install_data_path):
     # clean up and return result code
     unmountdmg(basedmg_mountpoint)
     unmountdmg(installesd_mountpoint)
-    return (result_code == 0)
+    return result_code == 0
 
 
 def setupHelperPartition(mountpoint, install_data_path):
@@ -810,7 +816,7 @@ def setupHelperPartition(mountpoint, install_data_path):
     boothelperdatapath = os.path.join(install_data_path, 'boot_helper_data')
     success = cacheBaseSystemData(install_data_path)
     if not success:
-        unused_result = unmountVolume(mountpoint)
+        dummy_result = unmountVolume(mountpoint)
         cleanupFromFailAndExit(
             'Could not cache data from BaseSystem.dmg')
 
@@ -819,7 +825,7 @@ def setupHelperPartition(mountpoint, install_data_path):
         try:
             os.makedirs(helper_root)
         except OSError, err:
-            unused_result = unmountVolume(mountpoint)
+            dummy_result = unmountVolume(mountpoint)
             cleanupFromFailAndExit(
                 'Could not create %s on boot helper partition: %s'
                 % (helper_root, err))
@@ -833,7 +839,7 @@ def setupHelperPartition(mountpoint, install_data_path):
         try:
             shutil.copy(item, helper_root)
         except OSError, err:
-            unused_result = unmountVolume(mountpoint)
+            dummy_result = unmountVolume(mountpoint)
             cleanupFromFailAndExit(
                 'Error copying %s to %s: %s' % (item, helper_root, err))
 
@@ -846,7 +852,7 @@ def setupHelperPartition(mountpoint, install_data_path):
             try:
                 os.makedirs(directory)
             except OSError, err:
-                unused_result = unmountVolume(mountpoint)
+                dummy_result = unmountVolume(mountpoint)
                 cleanupFromFailAndExit(
                     'Could not create %s: %s' % (directory, err))
 
@@ -856,14 +862,14 @@ def setupHelperPartition(mountpoint, install_data_path):
         try:
             shutil.rmtree(usrstandaloneefidir)
         except OSError, err:
-            unused_result = unmountVolume(mountpoint)
+            dummy_result = unmountVolume(mountpoint)
             cleanupFromFailAndExit(
                 'Could not remove existing %s: %s' % (usrstandaloneefidir, err))
     if os.path.exists(efilogindata):
         try:
             shutil.copytree(efilogindata, usrstandaloneefidir)
         except OSError, err:
-            unused_result = unmountVolume(mountpoint)
+            dummy_result = unmountVolume(mountpoint)
             cleanupFromFailAndExit(
                 'Could not copy %s: %s' % (efilogindata, err))
     # return our RPS directory
@@ -904,7 +910,7 @@ def updateHelperPartitions(install_vol_path, install_data_path):
         try:
             plistlib.writePlist(boot_plist, boot_plist_file)
         except (IOError, ExpatError), err:
-            unused_result = unmountVolume(mountpoint)
+            dummy_result = unmountVolume(mountpoint)
             cleanupFromFailAndExit(
                 'Failed when updating com.apple.Boot.plist: %s' % err)
         # copy kernelcache to helper partition
@@ -914,11 +920,11 @@ def updateHelperPartitions(install_vol_path, install_data_path):
             print "Copying kernelcache to helper partition"
             shutil.copy(kernelcache, dest_path)
         except IOError, err:
-            unused_result = unmountVolume(mountpoint)
+            dummy_result = unmountVolume(mountpoint)
             cleanupFromFailAndExit('Failed when copying kernelcache: %s' % err)
 
         # unmount the helper partition
-        unused_result = unmountVolume(mountpoint)
+        dummy_result = unmountVolume(mountpoint)
 
     # we are done updating the boot helper partitions.
     # we could remove the kernelcache from the target volume's install data
@@ -1040,13 +1046,20 @@ def main():
 
         kernelcache = os.path.join(
             basesystem_mountpoint, kernelcache_dir, kernelcache_name)
+        # prefer bootbase.efi if it exists
         bootefi = os.path.join(basesystem_mountpoint,
-                               'System/Library/CoreServices/boot.efi')
+                               'System/Library/CoreServices/bootbase.efi')
+        if not os.path.exists(bootefi):
+            print 'Didn\'t find bootbase.efi; falling back to boot.efi.'
+            bootefi = os.path.join(basesystem_mountpoint,
+                                   'System/Library/CoreServices/boot.efi')
         try:
             print ('Copying kernelcache and boot.efi to %s...'
                    % install_data_path)
             shutil.copy(kernelcache, install_data_path)
-            shutil.copy(bootefi, install_data_path)
+            # need to specify filename because source might be named
+            # bootbase.efi
+            shutil.copy(bootefi, os.path.join(install_data_path, 'boot.efi'))
         except IOError, err:
             unmountdmg(basesystem_mountpoint)
             unmountdmg(mountpoint)
@@ -1138,7 +1151,7 @@ def main():
            '--bootefi', bootefi, '--label', label]
     if not target_volume_is_corestorage_or_raid:
         options = ['--options',
-                   'config="\%s\com.apple.Boot"' % INSTALL_DATA_DIR_NAME]
+                   'config="\\%s\\com.apple.Boot"' % INSTALL_DATA_DIR_NAME]
         cmd.extend(options)
     print 'Blessing OS X installer boot environment in %s...' % folder
     try:
