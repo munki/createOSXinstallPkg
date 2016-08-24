@@ -23,6 +23,7 @@ Modified June 2013 for WWDC 2013
 Modified June 2014 for WWDC 2014
 Modified June 2015 for WWDC 2015
 Modified June 2016 for WWDC 2016
+Modified Aug 2016 for installs under SIP
 """
 
 import sys
@@ -408,6 +409,20 @@ def copy_postflight_script(output_pkg_path):
     fail('Could not find postflight script.')
 
 
+def copy_brtool(brtool_path, output_pkg_path):
+    '''Copies brtool from the Install OS X.app into the package resources'''
+    destination = os.path.join(output_pkg_path, 'Contents/Resources/brtool')
+    try:
+        shutil.copy(brtool_path, destination)
+        # make sure it's executable
+        subprocess.check_call(
+            ['/bin/chmod', 'a+x', destination])
+        return True
+    except (OSError, subprocess.CalledProcessError), err:
+        cleanupOutput(output_pkg_path)
+        fail('Error copying brtool: %s' % err)
+
+
 def makePackage(output_pkg_path, expanded_osinstall_mpkg,
                 os_version, build_number, pkg_id=None):
     '''Makes our output package'''
@@ -425,6 +440,7 @@ def makePackage(output_pkg_path, expanded_osinstall_mpkg,
     make_distribution(output_pkg_path, dist_file, installKBytes=8*1024*1024)
     source_pkg_resources = os.path.join(expanded_osinstall_mpkg, 'Resources')
     copyLocalizedResources(output_pkg_path, source_pkg_resources)
+
 
 def get_dir_size(some_dir):
     '''Gets the total size of some_dir. Very helpful in determining
@@ -554,7 +570,7 @@ def getPkgAndMakeIndexSproduct(destpath, os_vers='10.7'):
 
     SIERRA_PKGNAME = 'OSX_10_12_IncompatibleAppList.pkg'
     SIERRA_CATALOG_URL = (
-        'https://swscan.apple.com/content/catalogs/others'
+        'https://swscan.apple.com/content/catalogs/others/'
         'index-10.12-10.11-10.10-10.9-mountainlion-lion-snowleopard-leopard'
         '.merged-1.sucatalog')
 
@@ -753,7 +769,7 @@ def main():
     global TMPDIR
 
     usage = (
-        'Usage: %prog --source InstallOSX.app|InstallESD.dmg\n'
+        'Usage: %prog --source InstallOSX.app\n'
         '                           [--pkg path/to/additional.pkg]\n'
         '                           [--output path/to/InstallOSX.pkg]\n'
         '                           [--identifier com.example.installosx.pkg]\n'
@@ -768,7 +784,7 @@ def main():
     parser.add_option(
         '--source', '-s',
         help='Required unless specified via plist. Path to Install Mac '
-        'OS X Lion.app or Install OS X Foo.app or InstallESD.dmg')
+        'OS X Lion.app or Install OS X Foo.app ')
     parser.add_option(
         '--pkg', '-p', action="append", dest='packages',
         metavar='PACKAGE',
@@ -823,13 +839,14 @@ def main():
         installesd_dmg = os.path.join(
             source, 'Contents/SharedSupport/InstallESD.dmg')
         if not os.path.exists(installesd_dmg):
-            fail('%s doesn\'t appear to be an OS X installer application!'
-                 % source)
+            fail('Can\'t find InstallESD.dmg at %s' % installesd_dmg)
+        brtool_path = os.path.join(source, 'Contents/Resources/brtool')
+        if not os.path.exists(brtool_path):
+            fail('Can\'t find brtool at %s' % installesd_dmg)
 
     elif source.endswith('.dmg'):
-        installesd_dmg = source
-        if not os.path.exists(installesd_dmg):
-            fail('%s doesn\'t exist!' % installesd_dmg)
+        fail('This tool no longer supports using an InstallESD.dmg as a source.'
+             '/nProvide a path to an OS X install application instead.')
 
     else:
         fail('Unknown/unsupported source: %s' % source)
@@ -939,7 +956,7 @@ def main():
             if not os.path.exists(pkg):
                 fail('Package %s not found!' % pkg)
             minor_version = int(os_version.split('.')[1])
-            if (minor_version >= 10 and not is_flat_distribution(pkg)):
+            if minor_version >= 10 and not is_flat_distribution(pkg):
                 fail('%s is not a flat distribution package. '
                      'This will cause a 10.10+ '
                      'install to fail.' % pkg)
@@ -971,6 +988,9 @@ def main():
 
         # if we have any failures after this point, we should be sure to
         # clean up the broken package as well as our TMPDIR
+
+        print 'Copying brtool into package resources...'
+        copy_brtool(brtool_path, output_pkg_path)
 
         print 'Creating MacOSXInstaller.choiceChanges...'
         makeEmptyInstallerChoiceChanges(output_pkg_path)
@@ -1018,4 +1038,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
