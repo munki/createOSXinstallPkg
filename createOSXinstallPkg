@@ -61,7 +61,7 @@ def fail(errmsg=''):
 
 
 def cleanupOutput(output_path):
-    '''Attempt to clean up our output package/dmg
+    '''Attempt to clean up our output package/fake app
     if we fail during creation'''
     if not DEBUG:
         try:
@@ -445,6 +445,24 @@ def makePackage(output_pkg_path, expanded_osinstall_mpkg,
     copyLocalizedResources(output_pkg_path, source_pkg_resources)
 
 
+def makeFakeApplicationBundle(fake_app_path, source_app_path):
+    '''Makes a fake app bundle VMware Fusion can use to install OS X'''
+    if os.path.exists(fake_app_path):
+        fail('Something already exists at %s' % fake_app_path)
+    try:
+        os.makedirs(os.path.join(fake_app_path, 'Contents/SharedSupport'))
+    except OSError, err:
+        fail('Error creating fake app directories at %s: %s'
+             % (fake_app_path, err))
+    source_info_plist = os.path.join(source_app_path, 'Contents/Info.plist')
+    destination = os.path.join(fake_app_path, 'Contents/Info.plist')
+    try:
+        shutil.copy(source_info_plist, destination)
+    except OSError, err:
+        cleanupOutput(fake_app_path)
+        fail('Error copying Info.plist: %s' % err)
+
+
 def get_dir_size(some_dir):
     '''Gets the total size of some_dir. Very helpful in determining
     the size of bundle packages.'''
@@ -804,9 +822,10 @@ def main():
         'containing key/value pairs for Source, Output, Packages, and '
         'Identifier.')
     parser.add_option(
-        '--make-dmg', action='store_true', help='Optional. '
-        'Instead of creating an installer pkg, creates a disk image for use '
-        'with VMware Fusion to install a customized OS X. Experimental.')
+        '--make-fake-app', action='store_true', help='Optional. '
+        'Instead of creating an installer pkg, creates a fake installer '
+        'application for use with VMware Fusion to install a customized OS X. '
+        'Experimental.')
     options, arguments = parser.parse_args()
 
     if arguments:
@@ -849,10 +868,15 @@ def main():
 
     elif source.endswith('.dmg'):
         fail('This tool no longer supports using an InstallESD.dmg as a source.'
-             '/nProvide a path to an OS X install application instead.')
+             '/nProvide a path to an OS X/macOS install application instead.')
 
     else:
         fail('Unknown/unsupported source: %s' % source)
+
+    additional_packages = options.packages or plist_options.get('Packages', [])
+    if options.make_fake_app and not additional_packages:
+        fail('No additional packages specified -- nothing to add to the fake '
+             'install app!')
 
     # get some needed info from the disk image
     print 'Examining and verifying source...'
@@ -915,15 +939,14 @@ def main():
 
     # Figure out where we will be writing this...
     custom_tag = ''
-    additional_packages = options.packages or plist_options.get('Packages')
 
     if additional_packages:
         custom_tag = '_custom'
         # get rid of trailing slashes which often result from dragging
         # and dropping from the Finder into the Terminal
         additional_packages = [item.rstrip('/') for item in additional_packages]
-    if options.make_dmg:
-        outputname_base = 'InstallOSX_%s_%s%s.dmg'
+    if options.make_fake_app:
+        outputname_base = 'FakeInstallOSX_%s_%s%s.app'
     else:
         outputname_base = 'InstallOSX_%s_%s%s.pkg'
     outputname = outputname_base % (os_version, build_number, custom_tag)
@@ -931,9 +954,9 @@ def main():
 
     output = options.output or plist_options.get('Output')
     if output:
-        if ((options.make_dmg and output.endswith('.dmg')) or
+        if ((options.make_fake_app and output.endswith('.app')) or
                 output.endswith('.pkg')):
-            # we've been given a full path including the pkg/dmg name
+            # we've been given a full path including the app/dmg name
             output_path = os.path.abspath(output)
         else:
             # it better be a pre-existing directory
@@ -983,7 +1006,7 @@ def main():
 
     pkg_id = (options.identifier or plist_options.get('Identifier'))
     # we have everything we need.
-    if not options.make_dmg:
+    if not options.make_fake_app:
         output_pkg_path = output_path
         print 'Creating package wrapper...'
         makePackage(output_pkg_path, expanded_osinstall_mpkg,
@@ -1006,16 +1029,18 @@ def main():
 
         print '----------------------------------------------------------------'
         print 'Copying InstallESD into package...'
-        output_dmg_path = os.path.join(output_path,
-                                       'Contents/Resources/InstallESD.dmg')
+        output_dmg_path = os.path.join(
+            output_path, 'Contents/Resources/InstallESD.dmg')
     else:
         print '----------------------------------------------------------------'
-        print 'Creating custom InstallESD...'
-        output_dmg_path = output_path
+        print 'Creating custom fake Install.app...'
+        makeFakeApplicationBundle(output_path, source)
+        output_dmg_path = os.path.join(
+            output_path, 'Contents/SharedSupport/InstallESD.dmg')
 
-    if additional_packages or options.make_dmg:
+    if additional_packages or options.make_fake_app:
         create_minstallconfig = False
-        if options.make_dmg:
+        if options.make_fake_app:
             create_minstallconfig = True
         try:
             addPackagesToInstallESD(
@@ -1032,10 +1057,10 @@ def main():
             fail('Copy error: %e' % err)
 
     print '----------------------------------------------------------------'
-    if not options.make_dmg:
+    if not options.make_fake_app:
         print 'Done! Completed package at: %s' % output_path
     else:
-        print 'Done! Completed disk image at: %s' % output_path
+        print 'Done! Completed fake app image at: %s' % output_path
     cleanUp()
 
 
