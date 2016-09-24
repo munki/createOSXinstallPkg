@@ -43,11 +43,31 @@ from xml.parsers.expat import ExpatError
 # pylint: disable=C0103
 
 # some globals
+KERNELCACHE_NAME = 'kernelcache'
+KERNELCACHE_DIR = 'System/Library/Caches/com.apple.kext.caches/Startup'
+
+SOURCE_INSTALL_DATA_DIR_NAME = 'OS X Install Data'
 INSTALL_DATA_DIR_NAME = 'OS X Install Data'
 ENCODED_INSTALL_DATA_DIR_NAME = urllib2.quote(INSTALL_DATA_DIR_NAME)
 
-kernelcache_name = 'kernelcache'
-kernelcache_dir = 'System/Library/Caches/com.apple.kext.caches/Startup'
+
+def setDestinationInstallDataNames(pkgpath):
+    ''''Returns the name for the Install Data folder'''
+    # get the OS version to be installed from the package's info.plist
+    info_plist = os.path.join(pkgpath, 'Contents/Info.plist')
+    info = plistlib.readPlist(info_plist)
+    os_version = info.get('CFBundleShortVersionString')
+    global INSTALL_DATA_DIR_NAME
+    global ENCODED_INSTALL_DATA_DIR_NAME
+    major_version = '.'.join(os_version.split('.')[:2])
+    if major_version == '10.7':
+        INSTALL_DATA_DIR_NAME = 'Mac OS X Install Data'
+    elif major_version in ('10.8, 10.9', '10.10', '10.11'):
+        INSTALL_DATA_DIR_NAME = 'OS X Install Data'
+    else:
+        # 10.12 and (presumably +)
+        INSTALL_DATA_DIR_NAME = 'macOS Install Data'
+    ENCODED_INSTALL_DATA_DIR_NAME = urllib2.quote(INSTALL_DATA_DIR_NAME)
 
 
 def cleanupFromFailAndExit(errmsg=''):
@@ -486,7 +506,7 @@ def createBootPlist(install_data_path):
 
     boot_pl = {}
     boot_pl['Kernel Cache'] = '/%s/%s' % (
-        INSTALL_DATA_DIR_NAME, kernelcache_name)
+        INSTALL_DATA_DIR_NAME, KERNELCACHE_NAME)
     boot_pl['Kernel Flags'] = (
         'container-dmg=file://localhost/%s/InstallESD.dmg '
         'root-dmg=file://localhost/BaseSystem.dmg'
@@ -534,7 +554,7 @@ def create_minstallconfig(resources_path, installvolumepath,
 
     # do we have a choiceChanges file?
     choiceChangesFile = os.path.join(
-        resources_path, INSTALL_DATA_DIR_NAME,
+        resources_path, SOURCE_INSTALL_DATA_DIR_NAME,
         'MacOSXInstaller.choiceChanges')
     if os.path.exists(choiceChangesFile):
         shutil.copy(choiceChangesFile, install_data_path)
@@ -590,14 +610,15 @@ def create_index_sproduct(resources_path, install_data_path):
     # </plist>
     #
     index_sproduct_file = os.path.join(
-        resources_path, INSTALL_DATA_DIR_NAME, 'index.sproduct')
+        resources_path, SOURCE_INSTALL_DATA_DIR_NAME, 'index.sproduct')
     if os.path.exists(index_sproduct_file):
         # now copy all the packages it references
         index_pl = plistlib.readPlist(index_sproduct_file)
         for package in index_pl.get('Packages', []):
             try:
                 pkgpath = os.path.join(
-                    resources_path, INSTALL_DATA_DIR_NAME, package['URL'])
+                    resources_path, SOURCE_INSTALL_DATA_DIR_NAME,
+                    package['URL'])
                 shutil.copy(pkgpath, install_data_path)
             except (KeyError, IOError), err:
                 cleanupFromFailAndExit(
@@ -845,7 +866,7 @@ def setupHelperPartition(mountpoint, install_data_path):
 
     RPSdir = getRPSdir(mountpoint)
     usrstandalonedir = os.path.join(RPSdir, 'usr/standalone/i386')
-    kernelcachedir = os.path.join(RPSdir, kernelcache_dir)
+    kernelcachedir = os.path.join(RPSdir, KERNELCACHE_DIR)
     bootpdir = os.path.join(RPSdir, 'Library/Preferences/SystemConfiguration')
     for directory in [usrstandalonedir, kernelcachedir, bootpdir]:
         if not os.path.exists(directory):
@@ -914,8 +935,8 @@ def updateHelperPartitions(install_vol_path, install_data_path):
             cleanupFromFailAndExit(
                 'Failed when updating com.apple.Boot.plist: %s' % err)
         # copy kernelcache to helper partition
-        kernelcache = os.path.join(install_data_path, kernelcache_name)
-        dest_path = os.path.join(RPSdir, kernelcache_dir)
+        kernelcache = os.path.join(install_data_path, KERNELCACHE_NAME)
+        dest_path = os.path.join(RPSdir, KERNELCACHE_DIR)
         try:
             print "Copying kernelcache to helper partition"
             shutil.copy(kernelcache, dest_path)
@@ -939,6 +960,8 @@ def main():
         installvolumepath = sys.argv[3]
     except IndexError:
         cleanupFromFailAndExit('Missing runtime parameters from installer.')
+
+    setDestinationInstallDataNames(packagepath)
 
     # need this info a few places, so get it now
     installvolinfo = getVolumeInfo(installvolumepath)
@@ -979,7 +1002,7 @@ def main():
         # look in Resources/OS X Install Data/ in case the
         # admin put it there
         install_dmg = os.path.join(
-            resources_path, INSTALL_DATA_DIR_NAME, 'InstallESD.dmg')
+            resources_path, SOURCE_INSTALL_DATA_DIR_NAME, 'InstallESD.dmg')
         if not os.path.exists(install_dmg):
             cleanupFromFailAndExit(
                 'Missing InstallESD.dmg in package resources.')
@@ -1008,10 +1031,10 @@ def main():
 
     # copy kernelcache and boot.efi from root of dmg
     # to install_data_path
-    global kernelcache_name
-    global kernelcache_dir
-    kernelcache_name = 'kernelcache'
-    kernelcache_dir = 'System/Library/Caches/com.apple.kext.caches/Startup'
+    global KERNELCACHE_NAME
+    global KERNELCACHE_DIR
+    KERNELCACHE_NAME = 'kernelcache'
+    KERNELCACHE_DIR = 'System/Library/Caches/com.apple.kext.caches/Startup'
 
     kernelcache = os.path.join(mountpoint, 'kernelcache')
     bootefi = os.path.join(mountpoint, 'boot.efi')
@@ -1041,11 +1064,11 @@ def main():
             basesystem_mountpoint,
             'System/Library/PrelinkedKernels/prelinkedkernel')
         if os.path.exists(prelinked_path):
-            kernelcache_name = 'prelinkedkernel'
-            kernelcache_dir = 'System/Library/PrelinkedKernels'
+            KERNELCACHE_NAME = 'prelinkedkernel'
+            KERNELCACHE_DIR = 'System/Library/PrelinkedKernels'
 
         kernelcache = os.path.join(
-            basesystem_mountpoint, kernelcache_dir, kernelcache_name)
+            basesystem_mountpoint, KERNELCACHE_DIR, KERNELCACHE_NAME)
         # prefer bootbase.efi if it exists
         bootefi = os.path.join(basesystem_mountpoint,
                                'System/Library/CoreServices/bootbase.efi')
