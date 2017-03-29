@@ -1,3 +1,15 @@
+## Important note
+
+macOS 10.12.4 breaks createOSXinstallPkg.
+
+Due to Apple changes, it's likely-to-virtually-certain that some functionality of createOSXinstallPkg is gone forever: nothing we do will bring back the ability to insert additional packages to be installed.
+
+It's possible-to-likely that we can get the core functionality of being able to install vanilla macOS via a package working again.
+
+But I think it's probably better longer-term for the community to focus on new tools and new workflows using the `startosinstall` binary inside the Install macOS.app.
+
+Until there are fixed or replacement tools/workflows, I suggest you continue using createOSXinstallPkg with a 10.12.3 installer, and then allow Apple Software Update to upgrade machines to 10.12.4 and beyond.
+
 ## createOSXinstallPkg
 
 This tool allows you to create an installer package from an "Install OS X.app" or an InstallESD.dmg. You can use this package to install OS X on an empty partition, but perhaps more interestingly, you can also use it to upgrade existing OS X installations to a newer version of the OS X. There are many tools and workflows that support the installation of Apple packages; you can use these together with an OS X installation package to upgrade machines to the latest version of OS X.
