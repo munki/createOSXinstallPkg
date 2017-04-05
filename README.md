@@ -1,14 +1,12 @@
 ## Important note
 
-macOS 10.12.4 breaks createOSXinstallPkg.
+macOS 10.12.4 broke createOSXinstallPkg. Update to the current GitHub code to regain partial functionality: you will not be able to additional packages, and you'll have to provide your own copy of `brtool` from previous macOS Sierra installer apps or older createOSXinstallPkg-created packages.
 
 Due to Apple changes, it's likely-to-virtually-certain that some functionality of createOSXinstallPkg is gone forever: nothing we do will bring back the ability to insert additional packages to be installed.
 
-It's possible-to-likely that we can get the core functionality of being able to install vanilla macOS via a package working again.
+I think it's probably better longer-term for the community to focus on new tools and new workflows using the `startosinstall` binary inside the Install macOS.app. Munki 3 will probably support this.
 
-But I think it's probably better longer-term for the community to focus on new tools and new workflows using the `startosinstall` binary inside the Install macOS.app.
-
-Until there are fixed or replacement tools/workflows, I suggest you continue using createOSXinstallPkg with a 10.12.3 installer, and then allow Apple Software Update to upgrade machines to 10.12.4 and beyond.
+If you need to install macOS with additional packages, I suggest you continue using createOSXinstallPkg with a 10.12.3 installer, and then allow Apple Software Update to upgrade machines to 10.12.4 and beyond.
 
 ## createOSXinstallPkg
 
