@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # encoding: utf-8
 #
-# Copyright 2012-2016 Greg Neagle.
+# Copyright 2012-2017 Greg Neagle.
 #
 # Licensed under the Apache License, Version 2.0 (the 'License');
 # you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ Modified June 2014 for WWDC 2014
 Modified June 2015 for WWDC 2015
 Modified June 2016 for WWDC 2016
 Modified Aug 2016 for installs under SIP
+Modified Apr 2017 to deal with fallout from 10.12.4
 """
 
 import sys
@@ -34,6 +35,8 @@ import plistlib
 import shutil
 import subprocess
 import tempfile
+
+from distutils import version
 
 from xml.dom import minidom
 from xml.parsers.expat import ExpatError
@@ -810,7 +813,7 @@ def main():
         '--pkg', '-p', action="append", dest='packages',
         metavar='PACKAGE',
         help='Optional. An addtional package to include for installation. '
-        'May be specified more than once.')
+        'May be specified more than once. Not supported past macOS 10.12.3.')
     parser.add_option('--output', '-o', help='Optional. Path for output pkg. '
                       'Defaults to current working directory.')
     parser.add_option(
@@ -862,9 +865,6 @@ def main():
             source, 'Contents/SharedSupport/InstallESD.dmg')
         if not os.path.exists(installesd_dmg):
             fail('Can\'t find InstallESD.dmg at %s' % installesd_dmg)
-        brtool_path = os.path.join(source, 'Contents/Resources/brtool')
-        if not os.path.exists(brtool_path):
-            fail('Can\'t find brtool at %s' % installesd_dmg)
 
     elif source.endswith('.dmg'):
         fail('This tool no longer supports using an InstallESD.dmg as a source.'
@@ -937,6 +937,14 @@ def main():
         print 'distfile: %s' % distfile
     print '----------------------------------------------------------------'
 
+    # now that we know the target OS versions, we need to do a
+    # version-specific check
+    if additional_packages:
+        if version.LooseVersion(os_version) > version.LooseVersion('10.12.3'):
+            fail('ERROR: Additional packages are not supported for macOS '
+                 'installers higher than 10.12.3 due to package verification '
+                 'changes in macOS installers post-10.12.3.')
+
     # Figure out where we will be writing this...
     custom_tag = ''
 
@@ -1006,6 +1014,7 @@ def main():
 
     pkg_id = (options.identifier or plist_options.get('Identifier'))
     # we have everything we need.
+    need_to_print_brtool_warning = False
     if not options.make_fake_app:
         output_pkg_path = output_path
         print 'Creating package wrapper...'
@@ -1015,8 +1024,14 @@ def main():
         # if we have any failures after this point, we should be sure to
         # clean up the broken package as well as our TMPDIR
 
-        print 'Copying brtool into package resources...'
-        copy_brtool(brtool_path, output_pkg_path)
+        if version.LooseVersion(os_version) > version.LooseVersion('10.12.3'):
+            need_to_print_brtool_warning = True
+        else:
+            brtool_path = os.path.join(source, 'Contents/Resources/brtool')
+            if not os.path.exists(brtool_path):
+                fail('Can\'t find brtool at %s' % brtool_path)
+            print 'Copying brtool into package resources...'
+            copy_brtool(brtool_path, output_pkg_path)
 
         print 'Creating MacOSXInstaller.choiceChanges...'
         makeEmptyInstallerChoiceChanges(output_pkg_path)
@@ -1059,8 +1074,19 @@ def main():
     print '----------------------------------------------------------------'
     if not options.make_fake_app:
         print 'Done! Completed package at: %s' % output_path
+        if need_to_print_brtool_warning:
+            print ('***********************************************************'
+                   '\nWARNING: the (nearly) completed package is missing '
+                   'Contents/Resources/brtool.\nThe brtool included with '
+                   '10.12.4 and later has changed functionality.\nYou\'ll need '
+                   'to copy an older brtool from a 10.12-10.12.3 Install macOS '
+                   'Sierra.app or from a createOSXinstallPkg-created '
+                   '10.12-10.12.3 package into:\n%s\n'
+                   '***********************************************************'
+                   % os.path.join(output_path, 'Contents/Resources/'))
     else:
         print 'Done! Completed fake app image at: %s' % output_path
+
     cleanUp()
 
 
