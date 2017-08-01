@@ -4,7 +4,7 @@ macOS 10.12.4 broke createOSXinstallPkg. Update to the current GitHub code to re
 
 Due to Apple changes, it's likely-to-virtually-certain that some functionality of createOSXinstallPkg is gone forever: nothing we do will bring back the ability to insert additional packages to be installed.
 
-I think it's probably better longer-term for the community to focus on new tools and new workflows using the `startosinstall` binary inside the Install macOS.app. Munki 3 will probably support this.
+I think it's probably better longer-term for the community to focus on new tools and new workflows using the `startosinstall` binary inside the Install macOS.app. Munki 3 supports this workflow.
 
 If you need to install macOS with additional packages, I suggest you continue using createOSXinstallPkg with a 10.12.3 installer, and then allow Apple Software Update to upgrade machines to 10.12.4 and beyond.
 
