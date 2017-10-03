@@ -1,5 +1,7 @@
 ## Important note
 
+**This project is no longer under development.**
+
 macOS 10.12.4 broke createOSXinstallPkg. Update to the current GitHub code to regain partial functionality: you will not be able to add additional packages, and you'll have to provide your own copy of `brtool` from previous macOS Sierra installer apps or older createOSXinstallPkg-created packages.
 
 Due to Apple changes, it's likely-to-virtually-certain that some functionality of createOSXinstallPkg is gone forever: nothing we do will bring back the ability to insert additional packages to be installed.
